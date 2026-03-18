@@ -1,0 +1,19 @@
+/* Remove qualquer margem padrão do navegador e garante que o app ocupe 100% da tela */
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden; /* Evita barras de rolagem duplas */
+  background-color: #0f1115; /* Mantém o fundo escuro caso algo demore a carregar */
+}
+
+
+* {
+  box-sizing: border-box;
+}
+
+button:focus {
+  outline: none;
+  box-shadow: none;
+}
