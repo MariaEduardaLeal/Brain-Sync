@@ -9,7 +9,12 @@
         <h5 class="fw-bold ai-gradient-text mb-1 d-flex align-items-center">
           <span class="fs-4 me-2">🧠</span> Sessão de Raciocínio da IA
         </h5>
-        <small class="text-muted text-monospace">ID: {{ session.session_id }}</small>
+        <small class="text-muted text-monospace d-block">ID: {{ session.session_id }}</small>
+        <div v-if="session.match_reason" class="mt-2">
+          <span class="badge bg-dark border border-secondary text-secondary x-small py-1 px-2 fw-normal opacity-75">
+            🔍 {{ session.match_reason }}
+          </span>
+        </div>
       </div>
       <div class="d-flex align-items-center gap-2">
         <span class="badge status-badge rounded-pill px-3 py-2 fw-bold">FINALIZADO</span>
@@ -86,6 +91,7 @@ const props = defineProps<{
     plan_content: string | null;
     walkthrough_content: string | null;
     modified_files: string[];
+    match_reason?: string;
   }
 }>();
 
@@ -137,7 +143,7 @@ const get_filename = (filepath: string) => {
   background-color: rgba(30, 41, 59, 0.3);
   backdrop-filter: blur(8px);
   min-height: 250px;
-  max-height: 400px;
+  max-height: 550px;
   transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
   border-width: 1px !important;
 }
@@ -160,8 +166,8 @@ const get_filename = (filepath: string) => {
 .markdown-body {
   color: #94a3b8;
   line-height: 1.5;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.1) transparent;
+  scrollbar-width: auto; /* Força scrollbar visível quando necessário */
+  scrollbar-color: #3b82f6 rgba(255,255,255,0.05); /* Blue scrollbar */
 }
 
 .markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) {
@@ -189,10 +195,22 @@ const get_filename = (filepath: string) => {
   margin-bottom: 0.75rem;
 }
 
-/* Scrollbar estilizada */
-.markdown-body::-webkit-scrollbar { width: 4px; }
-.markdown-body::-webkit-scrollbar-track { background: transparent; }
-.markdown-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+/* Scrollbar estilizada - Webkit */
+.markdown-body::-webkit-scrollbar { 
+  width: 6px; 
+}
+.markdown-body::-webkit-scrollbar-track { 
+  background: rgba(0, 0, 0, 0.2); 
+  border-radius: 10px;
+}
+.markdown-body::-webkit-scrollbar-thumb { 
+  background: #3b82f6; 
+  border-radius: 10px;
+  box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
+}
+.markdown-body::-webkit-scrollbar-thumb:hover {
+  background: #60a5fa;
+}
 
 /* Efeitos Visuais extras */
 .glow-orb {

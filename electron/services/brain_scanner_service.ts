@@ -11,6 +11,8 @@ export interface AIReasoningSession {
     plan_content: string | null;
     walkthrough_content: string | null;
     modified_files: string[];
+    project_id?: number;
+    match_reason?: string;
 }
 
 /**
@@ -90,18 +92,41 @@ export class BrainScannerService {
         const walkthrough_content = has_walk ? await fs.promises.readFile(walk_path, 'utf8') : null;
 
         // Extrai os caminhos absolutos dos arquivos usando Regex
-        const modified_files = this.extract_modified_paths(plan_content, walkthrough_content);
+        const modified_files = this.extract_file_paths(
+            (task_content || '') + (plan_content || '') + (walkthrough_content || '')
+        );
 
         // Se passarmos um filtro de projeto, temos que garantir que essa sessão pertence a ele
         if (project_filter) {
-            const belongs_to_project = this.check_project_association(modified_files, project_filter);
-            // Se não encontrou nenhum arquivo pertencente a esse projeto (e encontrou arquivos),
-            // ou se for uma sessão vazia, ignoramos no contexto estrito do projeto.
-            if (!belongs_to_project && modified_files.length > 0) {
+            // Caminho do projeto normalizado para comparação
+            const normalized_project_path = path.normalize(project_filter.local_path).toLowerCase().replace(/\\/g, '/');
+
+            // Filtra apenas arquivos que pertencem a este projeto (case-insensitive e slash-agnostic)
+            const project_files = [...new Set(modified_files.filter(f => {
+                const normalized_f = path.normalize(f).toLowerCase().replace(/\\/g, '/');
+                return normalized_f.startsWith(normalized_project_path);
+            }))];
+
+            // Heurística de Precisão: Só associa se detectou pelo menos 1 arquivo modificado deste projeto
+            if (project_files.length > 0) {
+                const match_reason = `Detectado vínculo através de ${project_files.length} arquivo(s), ex: ${this.get_filename(project_files[0])}`;
+                
+                return {
+                    session_id,
+                    project_id: project_filter.id,
+                    task_content,
+                    plan_content,
+                    walkthrough_content,
+                    modified_files: project_files,
+                    match_reason // Novo campo para dar feedback ao usuário
+                };
+            } else {
+                // Se um filtro de projeto foi fornecido, mas nenhum arquivo modificado pertence a ele, ignorar a sessão.
                 return null;
             }
         }
 
+        // Se não há filtro de projeto, retorna a sessão com todos os arquivos modificados
         return {
             session_id,
             task_content,
@@ -115,15 +140,14 @@ export class BrainScannerService {
      * Busca padrões de links de arquivos no Markdown [NEW/MODIFY/DELETE] [nome](file:///c:/caminho).
      * Retorna um array de caminhos normalizados.
      */
-    private extract_modified_paths(plan: string | null, walk: string | null): string[] {
+    private extract_file_paths(content: string): string[] {
         const paths = new Set<string>();
-        const contents = `${plan || ''}\n${walk || ''}`;
         
         // Procura por (file:///C:/...) ou (file:///c%3A/...)
         const regex = /\(file:\/\/\/(.*?)\)/gi;
         let match;
 
-        while ((match = regex.exec(contents)) !== null) {
+        while ((match = regex.exec(content)) !== null) {
             let extracted_path = match[1];
             
             // Decodifica URL encode (ex: c%3A -> c:)
@@ -139,18 +163,7 @@ export class BrainScannerService {
         return Array.from(paths);
     }
 
-    /**
-     * Verifica se pelo menos um arquivo extraído pertence ao caminho do projeto.
-     */
-    private check_project_association(modified_files: string[], project: ProjectMetadata): boolean {
-        // Obter caminho local normalizado do projeto
-        const proj_path = path.normalize(project.local_path).toLowerCase();
-        
-        for (const file_path of modified_files) {
-            if (file_path.toLowerCase().startsWith(proj_path)) {
-                return true;
-            }
-        }
-        return false;
+    private get_filename(filepath: string): string {
+        return filepath.split(/[\\/]/).pop() || filepath;
     }
 }

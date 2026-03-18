@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, shell, dialog } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { FileWatcherService } from './services/file_watcher_service'
@@ -204,8 +204,19 @@ ipcMain.handle('project_create_local_db_request', async (_event: IpcMainInvokeEv
     }
 });
 
+/**
+ * Canal para abrir o seletor de pastas nativo.
+ */
+ipcMain.handle('project_select_folder_request', async () => {
+    const result = await dialog.showOpenDialog({
+        properties: ['openDirectory']
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0];
+});
+
 app.whenReady().then(() => {
     // Inicializa o repositório local usando a pasta de dados do Electron
     project_repository = new ProjectRepository(app.getPath('userData'));
     createWindow();
-})
+});

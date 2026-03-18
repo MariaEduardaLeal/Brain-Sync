@@ -141,6 +141,9 @@
           <label class="form-label small text-muted">Caminho Local (Absoluto)</label>
           <div class="input-group">
             <input v-model="new_project.local_path" @input="debounced_probe" type="text" class="form-control bg-dark border-secondary text-white" placeholder="C:\Projetos\meu-app">
+            <button class="btn btn-outline-secondary border-secondary" @click="pick_folder" title="Selecionar Pasta">
+              📂
+            </button>
             <span v-if="is_probing" class="input-group-text bg-dark border-secondary">
               <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
             </span>
@@ -289,6 +292,15 @@ const debounced_probe = () => {
       is_probing.value = false;
     }
   }, 800);
+};
+
+const pick_folder = async () => {
+  // @ts-ignore
+  const path = await window.ipcRenderer.invoke('project_select_folder_request');
+  if (path) {
+    new_project.local_path = path;
+    debounced_probe();
+  }
 };
 
 /**
