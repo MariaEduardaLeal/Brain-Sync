@@ -84,7 +84,7 @@
 import { marked } from 'marked';
 import filterXSS from 'xss';
 
-const props = defineProps<{
+defineProps<{
   session: {
     session_id: string;
     task_content: string | null;

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, shell, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, dialog } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { FileWatcherService } from './services/file_watcher_service'

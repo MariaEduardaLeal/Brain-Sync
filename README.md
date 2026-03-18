@@ -55,3 +55,19 @@ Diferente de sistemas centralizados, o Brain-Sync adota uma abordagem **BYOD (Br
 
 ---
 *Desenvolvido para transformar logs de IA em inteligência organizacional.*
+
+## 👨‍💻 Como Distribuir o App (Build)
+
+Para gerar o executável (.exe) e enviar para alguém:
+
+1.  No terminal do projeto, rode:
+    ```bash
+    npm run build
+    ```
+2.  Aguarde o processo finalizar. Uma pasta chamada `release/0.0.0` (ou a versão atual) será criada.
+3.  Dentro dessa pasta, você encontrará o arquivo:
+    *   `Brain-Sync-Windows-0.0.0-Setup.exe` (Instalador padrão).
+4.  Basta enviar esse arquivo `.exe` para a pessoa!
+
+> [!TIP]
+> Você também pode encontrar uma pasta `win-unpacked` dentro de `release` se quiser rodar o app sem instalar em outras máquinas Windows.
