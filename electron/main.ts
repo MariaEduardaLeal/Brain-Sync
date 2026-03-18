@@ -5,6 +5,7 @@ import { FileWatcherService } from './services/file_watcher_service'
 import { DatabaseService } from './services/database_service'
 import { ProjectRepository } from './repositories/project_repository'
 import { EnvDiscoveryService } from './services/env_discovery_service'
+import { BrainScannerService } from './services/brain_scanner_service'
 
 // Instancia os serviços globais
 const database_service = new DatabaseService();
@@ -148,6 +149,28 @@ ipcMain.handle('project_delete_request', async (_event: IpcMainInvokeEvent, proj
         const success = project_repository.delete_project(project_id);
         return { success };
     } catch (error) {
+        return { success: false, error: String(error) };
+    }
+});
+
+/**
+ * Canal para executar a varredura do histórico da IA e salvar no banco do projeto.
+ */
+ipcMain.handle('historical_scan_request', async (_event: IpcMainInvokeEvent, project_id: number) => {
+    try {
+        const project = project_repository.get_project_by_id(project_id);
+        if (!project) throw new Error('Projeto não encontrado nos registros locais.');
+
+        const scanner = new BrainScannerService();
+        // Faz o scan apenas filtrando por artefatos que cruzaram com este projeto
+        const reasoning_data = await scanner.scan_historical_data(project);
+        
+        // Salva os resultados no banco MySQL de forma idempotente via Transação
+        await database_service.save_reasoning_scan_transaction(reasoning_data);
+
+        return { success: true, data: reasoning_data, count: reasoning_data.length };
+    } catch (error) {
+        console.error('[Main] Erro no historical_scan_request:', error);
         return { success: false, error: String(error) };
     }
 });

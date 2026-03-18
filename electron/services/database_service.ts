@@ -107,9 +107,56 @@ export class DatabaseService {
     }
 
     /**
-     * Encerra todas as conexões ativas no pool.
+     * Salva os ciclos completos de raciocínio da IA usando transação e UPSERT.
      * 
-     * @return {Promise<void>}
+     * @param {any[]} reasoning_data Array de objetos contendo os logs parseados.
+     */
+    public async save_reasoning_scan_transaction(reasoning_data: any[]): Promise<void> {
+        if (!this.connection_pool) {
+            throw new Error('Conexão com banco de dados indisponível.');
+        }
+
+        const conn = await this.connection_pool.getConnection();
+        await conn.beginTransaction();
+
+        try {
+            for (const item of reasoning_data) {
+                const sql = `
+                    INSERT INTO brain_sync_ai_reasoning 
+                    (session_id, task_content, plan_content, walkthrough_content, modified_files) 
+                    VALUES (?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE 
+                    task_content = VALUES(task_content),
+                    plan_content = VALUES(plan_content),
+                    walkthrough_content = VALUES(walkthrough_content),
+                    modified_files = VALUES(modified_files),
+                    scanned_at = CURRENT_TIMESTAMP
+                `;
+                
+                const modified_files_json = JSON.stringify(item.modified_files || []);
+                
+                await conn.query({ sql, values: [
+                    item.session_id,
+                    item.task_content || null,
+                    item.plan_content || null,
+                    item.walkthrough_content || null,
+                    modified_files_json
+                ]});
+            }
+
+            await conn.commit();
+            console.log(`[DatabaseService] Transação concluída: ${reasoning_data.length} registros (Brain Scan) salvos.`);
+        } catch (error) {
+            await conn.rollback();
+            console.error('[DatabaseService] Erro na transação de salvamento de raciocínio:', error);
+            throw error;
+        } finally {
+            conn.release();
+        }
+    }
+
+    /**
+     * Encerra todas as conexões ativas no pool.
      */
     public async disconnect(): Promise<void> {
         if (this.connection_pool) {

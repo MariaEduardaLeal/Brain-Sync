@@ -65,11 +65,34 @@
               <code class="text-danger mt-1 p-2 rounded bg-dark border border-danger opacity-75" style="font-size: 0.75rem;">{{ project_db_error }}</code>
             </div>
           </div>
-          <button class="btn btn-export-ai px-4 py-2 rounded-3 fw-bold shadow-lg" :disabled="!project_db_connected">
-            ✨ Copiar Contexto para IA
-          </button>
+          
+          <div class="d-flex gap-2">
+            <button class="btn btn-export-ai px-4 py-2 rounded-3 fw-bold shadow-lg d-flex align-items-center" :disabled="!project_db_connected">
+              <span class="me-2 fs-5">✨</span> Sincronizar Novos Logs
+            </button>
+            <button 
+              class="btn btn-outline-info px-4 py-2 rounded-3 fw-bold shadow-lg d-flex align-items-center" 
+              :disabled="!project_db_connected || is_scanning"
+              @click="scan_ai_history"
+            >
+              <span class="me-2 fs-5" :class="{'spin-anim': is_scanning}">🔄</span> 
+              {{ is_scanning ? 'Escaneando o Cérebro...' : 'Escanear Histórico Completo' }}
+            </button>
+          </div>
         </header>
 
+        <!-- Renderizador do Fluxograma (AIFlowchart) -->
+        <div class="mt-5" v-if="ai_sessions.length > 0">
+          <h4 class="text-white fw-bold mb-4 border-bottom border-secondary pb-2">Linha do Tempo de Raciocínio (Histórico)</h4>
+          <AIFlowchart 
+            v-for="session in ai_sessions" 
+            :key="session.session_id" 
+            :session="session" 
+          />
+        </div>
+
+        <!-- Timeline Container (Para Logs Avulsos / Sync) -->
+        <div class="timeline-container mt-4" v-if="worklogs.length > 0 && ai_sessions.length === 0"></div>
         <div class="status-card rounded-4 p-4 mb-4 d-flex align-items-center" :class="{ 'syncing-active': is_syncing }">
           <div class="pulse-indicator me-3" :class="{ 'pulse-fast': is_syncing }"></div>
           <div>
@@ -166,6 +189,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue';
+import AIFlowchart from './components/AIFlowchart.vue';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 // Estado Reativo
@@ -173,6 +197,7 @@ const registered_projects = ref<any[]>([]);
 const active_project_id = ref<number | null>(null);
 const is_syncing = ref(false);
 const last_log_received = ref<string | null>(null);
+const worklogs = ref<any[]>([]);
 
 // Database UX (Per Project)
 const project_db_connected = ref(false);
@@ -192,6 +217,10 @@ const new_project = reactive({
   db_pass: '',
   db_name: 'brain_sync'
 });
+
+// Flowchart UX
+const ai_sessions = ref<any[]>([]);
+const is_scanning = ref(false);
 
 const active_project_name = computed(() => {
   const project = registered_projects.value.find(p => p.id === active_project_id.value);
@@ -260,6 +289,7 @@ const select_project = async (selected_id: number) => {
   is_connecting_project.value = true;
   project_db_connected.value = false;
   project_db_error.value = null;
+  ai_sessions.value = []; // Clear AI sessions when changing project
 
   try {
     const config = {
@@ -273,6 +303,8 @@ const select_project = async (selected_id: number) => {
     const response = await window.ipcRenderer.invoke('database_connect_request', config);
     if (response.success) {
       project_db_connected.value = true;
+      // Dá um refresh no painel de sessoes se mudar de DB
+      // ai_sessions.value = []; // This was moved above
     } else {
       project_db_error.value = response.error;
       console.error('Falha ao conectar ao banco do projeto:', response.error);
@@ -312,6 +344,28 @@ const save_project = async () => {
   }
 };
 
+const scan_ai_history = async () => {
+  if (!active_project_id.value) return;
+  is_scanning.value = true;
+  
+  try {
+    // @ts-ignore
+    const response = await window.ipcRenderer.invoke('historical_scan_request', active_project_id.value);
+    if (response.success) {
+      ai_sessions.value = response.data;
+      if (response.data.length === 0) {
+        alert('Nenhum dado cruzado de histórico foi encontrado para este projeto.');
+      }
+    } else {
+      alert(`Falha ao escanear: ${response.error}`);
+    }
+  } catch (err) {
+    console.error('Erro ao acionar varredura:', err);
+  } finally {
+    is_scanning.value = false;
+  }
+};
+
 const delete_project = async (id: number) => {
   if (!confirm('Deseja remover este projeto do Brain-Sync? (O banco de dados não será de fato apagado, apenas desvinculado)')) return;
   
@@ -322,6 +376,7 @@ const delete_project = async (id: number) => {
       if (active_project_id.value === id) {
         active_project_id.value = null;
         project_db_connected.value = false;
+        ai_sessions.value = []; // Clear AI sessions if active project is deleted
       }
       await load_projects();
     } else {
