@@ -14,12 +14,21 @@
       <ul class="nav flex-column gap-2 flex-grow-1 overflow-auto px-1">
         <li class="nav-item" v-for="project in registered_projects" :key="project.id">
           <button 
-            class="btn w-100 text-start project-btn rounded-3 d-flex align-items-center" 
+            class="btn w-100 text-start project-btn rounded-3 d-flex justify-content-between align-items-center" 
             :class="{ 'active-project shadow-sm': project.id === active_project_id }"
             @click="select_project(project.id)"
           >
-            <span class="folder-icon me-2">📁</span>
-            <span class="text-truncate">{{ project.name }}</span>
+            <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
+              <span class="folder-icon me-2">📁</span>
+              <span class="text-truncate">{{ project.name }}</span>
+            </div>
+            <span 
+              class="delete-icon px-1" 
+              title="Remover Projeto do Brain-Sync"
+              @click.stop="delete_project(project.id)"
+            >
+              🗑️
+            </span>
           </button>
         </li>
 
@@ -51,8 +60,9 @@
             <div class="path-badge text-monospace small px-2 py-1 rounded">
               <span class="text-muted">PATH:</span> {{ active_project_path }}
             </div>
-            <div v-if="!project_db_connected" class="mt-2 text-danger small d-flex align-items-center">
-              <span class="me-1">⚠️</span> Erro de conexão com o MySQL do projeto. Verifique o .env.
+            <div v-if="project_db_error" class="mt-2 text-danger small d-flex flex-column">
+              <span class="d-flex align-items-center"><span class="me-1">⚠️</span> Falha de Conexão com o Banco do Projeto</span>
+              <code class="text-danger mt-1 p-2 rounded bg-dark border border-danger opacity-75" style="font-size: 0.75rem;">{{ project_db_error }}</code>
             </div>
           </div>
           <button class="btn btn-export-ai px-4 py-2 rounded-3 fw-bold shadow-lg" :disabled="!project_db_connected">
@@ -166,6 +176,7 @@ const last_log_received = ref<string | null>(null);
 
 // Database UX (Per Project)
 const project_db_connected = ref(false);
+const project_db_error = ref<string | null>(null);
 const is_connecting_project = ref(false);
 
 // Project UX
@@ -248,6 +259,7 @@ const select_project = async (selected_id: number) => {
 
   is_connecting_project.value = true;
   project_db_connected.value = false;
+  project_db_error.value = null;
 
   try {
     const config = {
@@ -262,9 +274,11 @@ const select_project = async (selected_id: number) => {
     if (response.success) {
       project_db_connected.value = true;
     } else {
+      project_db_error.value = response.error;
       console.error('Falha ao conectar ao banco do projeto:', response.error);
     }
-  } catch (err) {
+  } catch (err: any) {
+    project_db_error.value = String(err);
     console.error('Erro fatal ao conectar projeto:', err);
   } finally {
     is_connecting_project.value = false;
@@ -295,6 +309,26 @@ const save_project = async () => {
     console.error('Erro ao salvar projeto:', err);
   } finally {
     is_saving.value = false;
+  }
+};
+
+const delete_project = async (id: number) => {
+  if (!confirm('Deseja remover este projeto do Brain-Sync? (O banco de dados não será de fato apagado, apenas desvinculado)')) return;
+  
+  try {
+    // @ts-ignore
+    const response = await window.ipcRenderer.invoke('project_delete_request', id);
+    if (response.success) {
+      if (active_project_id.value === id) {
+        active_project_id.value = null;
+        project_db_connected.value = false;
+      }
+      await load_projects();
+    } else {
+      alert(`Erro ao excluir: ${response.error}`);
+    }
+  } catch (err) {
+    console.error('Erro ao excluir projeto:', err);
   }
 };
 
@@ -364,6 +398,18 @@ onMounted(() => {
   background-color: #1e293b;
   color: #60a5fa !important;
   border: 1px solid #334155;
+}
+
+.delete-icon {
+  opacity: 0.2;
+  transition: opacity 0.2s, transform 0.2s;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.delete-icon:hover {
+  opacity: 1;
+  transform: scale(1.1);
 }
 
 .project-db-section {

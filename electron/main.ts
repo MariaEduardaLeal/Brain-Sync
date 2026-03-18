@@ -140,6 +140,18 @@ ipcMain.handle('project_probe_env_request', async (_event: IpcMainInvokeEvent, p
     }
 });
 
+/**
+ * Canal para deletar um projeto do JSON local.
+ */
+ipcMain.handle('project_delete_request', async (_event: IpcMainInvokeEvent, project_id: number) => {
+    try {
+        const success = project_repository.delete_project(project_id);
+        return { success };
+    } catch (error) {
+        return { success: false, error: String(error) };
+    }
+});
+
 app.whenReady().then(() => {
     // Inicializa o repositório local usando a pasta de dados do Electron
     project_repository = new ProjectRepository(app.getPath('userData'));

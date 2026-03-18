@@ -89,6 +89,22 @@ export class ProjectRepository {
     }
 
     /**
+     * Remove um projeto da lista local pelo ID.
+     */
+    public delete_project(id: number): boolean {
+        const projects = this.get_all_projects();
+        const initial_length = projects.length;
+        const remaining = projects.filter(p => p.id !== id);
+        
+        if (remaining.length < initial_length) {
+            this.persist(remaining);
+            console.log(`[ProjectRepository] Projeto ID ${id} removido.`);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Persiste a lista completa no arquivo.
      */
     private persist(projects: ProjectMetadata[]): void {

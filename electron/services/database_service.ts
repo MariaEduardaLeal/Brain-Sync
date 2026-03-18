@@ -24,7 +24,7 @@ export class DatabaseService {
      */
     public async connect(config: mysql.PoolOptions, schema_path: string): Promise<void> {
         try {
-            console.log('[DatabaseService] Verificando existência do banco...');
+            console.log(`[DatabaseService] Verificando existência do banco "${config.database}"...`);
             
             // Conexão temporária sem database para criar o banco se necessário
             const temp_conn = await mysql.createConnection({
@@ -38,6 +38,7 @@ export class DatabaseService {
             await temp_conn.end();
 
             console.log(`[DatabaseService] Banco "${config.database}" garantido. Conectando pool...`);
+
             
             // Se já houver um pool ativo, encerra-o antes de abrir um novo (BYOD Per-Project)
             if (this.connection_pool) {
