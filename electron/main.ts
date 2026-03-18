@@ -97,6 +97,10 @@ app.on('activate', () => {
  */
 ipcMain.handle('database_connect_request', async (_event: IpcMainInvokeEvent, config: any) => {
     try {
+        if (!config || !config.host) {
+            console.log('[Main] Pulo de conexão: Configuração de banco ausente ou Modo Offline.');
+            return { success: true, offline: true };
+        }
         const schema_path = path.join(process.env.APP_ROOT, 'electron/db/schema.sql');
         await database_service.connect(config, schema_path);
         return { success: true };
@@ -165,12 +169,37 @@ ipcMain.handle('historical_scan_request', async (_event: IpcMainInvokeEvent, pro
         // Faz o scan apenas filtrando por artefatos que cruzaram com este projeto
         const reasoning_data = await scanner.scan_historical_data(project);
         
-        // Salva os resultados no banco MySQL de forma idempotente via Transação
-        await database_service.save_reasoning_scan_transaction(reasoning_data);
+        // Salva os resultados no banco MySQL de forma idempotente via Transação (Apenas se tiver DB)
+        if (!project.no_database) {
+            await database_service.save_reasoning_scan_transaction(reasoning_data);
+        }
 
-        return { success: true, data: reasoning_data, count: reasoning_data.length };
+        return { success: true, data: reasoning_data, count: reasoning_data.length, persisted: !project.no_database };
     } catch (error) {
         console.error('[Main] Erro no historical_scan_request:', error);
+        return { success: false, error: String(error) };
+    }
+});
+
+/**
+ * Canal para tentar criar um banco de dados local automaticamente.
+ */
+ipcMain.handle('project_create_local_db_request', async (_event: IpcMainInvokeEvent, data: { name: string }) => {
+    try {
+        const db_name = `brain_sync_${data.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        const config = {
+            host: 'localhost',
+            user: 'root',
+            password: '', // Assume root sem senha por padrão para ambiente local dev
+            database: db_name
+        };
+
+        const schema_path = path.join(process.env.APP_ROOT, 'electron/db/schema.sql');
+        await database_service.connect(config, schema_path);
+        
+        return { success: true, config };
+    } catch (error) {
+        console.error('[Main] Falha ao auto-criar banco local:', error);
         return { success: false, error: String(error) };
     }
 });

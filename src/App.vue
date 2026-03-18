@@ -57,8 +57,9 @@
         <header class="d-flex justify-content-between align-items-center mb-5">
           <div>
             <h2 class="fw-bold text-white mb-1">{{ active_project_name }}</h2>
-            <div class="path-badge text-monospace small px-2 py-1 rounded">
-              <span class="text-muted">PATH:</span> {{ active_project_path }}
+            <div class="path-badge text-monospace small px-2 py-1 rounded d-flex align-items-center">
+              <span class="text-muted me-2">PATH:</span> {{ active_project_path }}
+              <span v-if="active_project_no_db" class="ms-3 badge bg-warning text-dark x-small fw-bold border-0">⚠️ MODO OFFLINE (SEM BANCO)</span>
             </div>
             <div v-if="project_db_error" class="mt-2 text-danger small d-flex flex-column">
               <span class="d-flex align-items-center"><span class="me-1">⚠️</span> Falha de Conexão com o Banco do Projeto</span>
@@ -67,12 +68,12 @@
           </div>
           
           <div class="d-flex gap-2">
-            <button class="btn btn-export-ai px-4 py-2 rounded-3 fw-bold shadow-lg d-flex align-items-center" :disabled="!project_db_connected">
+            <button class="btn btn-export-ai px-4 py-2 rounded-3 fw-bold shadow-lg d-flex align-items-center" :disabled="!project_db_connected && !active_project_no_db">
               <span class="me-2 fs-5">✨</span> Sincronizar Novos Logs
             </button>
             <button 
               class="btn btn-outline-info px-4 py-2 rounded-3 fw-bold shadow-lg d-flex align-items-center" 
-              :disabled="!project_db_connected || is_scanning"
+              :disabled="(!project_db_connected && !active_project_no_db) || is_scanning"
               @click="scan_ai_history"
             >
               <span class="me-2 fs-5" :class="{'spin-anim': is_scanning}">🔄</span> 
@@ -147,31 +148,50 @@
           <small v-if="env_found" class="text-success x-small mt-1 d-block">✨ Arquivo .env detectado automaticamente!</small>
         </div>
 
-        <div class="project-db-section p-3 rounded-3 mb-4 bg-black-50 border border-secondary shadow-inner">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="small fw-bold text-muted">CONFIGURAÇÃO DE BANCO (MySQL)</span>
-            <span v-if="env_found" class="badge bg-success-soft text-success x-small">Auto-preenchido</span>
+        <div class="project-db-section p-3 rounded-4 mb-4 bg-black-50 border border-secondary shadow-inner">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="d-flex align-items-center">
+              <div class="form-check form-switch me-2">
+                <input class="form-check-input ms-0" type="checkbox" v-model="link_database" id="linkDbSwitch">
+              </div>
+              <label class="small fw-bold text-muted cursor-pointer" for="linkDbSwitch">VINCULAR BANCO DE DADOS (MySQL)</label>
+            </div>
+            <span v-if="env_found && link_database" class="badge bg-success-soft text-success x-small">Auto-preenchido</span>
           </div>
           
-          <div class="row g-2">
-            <div class="col-8">
-              <label class="x-small text-muted">Host</label>
-              <input v-model="new_project.db_host" type="text" class="form-control form-control-sm bg-dark border-secondary text-white">
+          <div v-if="link_database" class="fade-in">
+            <div class="row g-2">
+              <div class="col-8">
+                <label class="x-small text-muted">Host</label>
+                <input v-model="new_project.db_host" type="text" class="form-control form-control-sm bg-dark border-secondary text-white">
+              </div>
+              <div class="col-4">
+                <label class="x-small text-muted">User</label>
+                <input v-model="new_project.db_user" type="text" class="form-control form-control-sm bg-dark border-secondary text-white">
+              </div>
             </div>
-            <div class="col-4">
-              <label class="x-small text-muted">User</label>
-              <input v-model="new_project.db_user" type="text" class="form-control form-control-sm bg-dark border-secondary text-white">
+            <div class="row g-2 mt-1">
+              <div class="col-6">
+                <label class="x-small text-muted">Senha</label>
+                <input v-model="new_project.db_pass" type="password" class="form-control form-control-sm bg-dark border-secondary text-white">
+              </div>
+              <div class="col-6">
+                <label class="x-small text-muted">Database</label>
+                <input v-model="new_project.db_name" type="text" class="form-control form-control-sm bg-dark border-secondary text-white">
+              </div>
+            </div>
+            <div class="mt-3">
+              <button 
+                class="btn btn-sm btn-outline-primary w-100 rounded-pill x-small py-2 border-dashed"
+                @click="auto_create_local_db"
+                :disabled="is_creating_db"
+              >
+                {{ is_creating_db ? '⚙️ Processando...' : '✨ Tentar auto-criar banco local (localhost)' }}
+              </button>
             </div>
           </div>
-          <div class="row g-2 mt-1">
-            <div class="col-6">
-              <label class="x-small text-muted">Senha</label>
-              <input v-model="new_project.db_pass" type="password" class="form-control form-control-sm bg-dark border-secondary text-white">
-            </div>
-            <div class="col-6">
-              <label class="x-small text-muted">Database</label>
-              <input v-model="new_project.db_name" type="text" class="form-control form-control-sm bg-dark border-secondary text-white">
-            </div>
+          <div v-else class="text-center p-2 opacity-75">
+            <p class="x-small text-warning m-0">⚠️ No modo offline, o histórico lido dos arquivos não será salvo no DB.</p>
           </div>
         </div>
 
@@ -209,13 +229,17 @@ const show_project_modal = ref(false);
 const is_probing = ref(false);
 const is_saving = ref(false);
 const env_found = ref(false);
+const link_database = ref(true);
+const is_creating_db = ref(false);
+
 const new_project = reactive({
   name: '',
   local_path: '',
   db_host: 'localhost',
   db_user: 'root',
   db_pass: '',
-  db_name: 'brain_sync'
+  db_name: 'brain_sync',
+  no_database: false
 });
 
 // Flowchart UX
@@ -230,6 +254,11 @@ const active_project_name = computed(() => {
 const active_project_path = computed(() => {
   const project = registered_projects.value.find(p => p.id === active_project_id.value);
   return project ? project.local_path : '';
+});
+
+const active_project_no_db = computed(() => {
+  const project = registered_projects.value.find(p => p.id === active_project_id.value);
+  return project ? project.no_database : false;
 });
 
 /**
@@ -292,6 +321,13 @@ const select_project = async (selected_id: number) => {
   ai_sessions.value = []; // Clear AI sessions when changing project
 
   try {
+    if (project.no_database) {
+      console.log('[Vue] Projeto em modo Offline. Pulando conexão MySQL.');
+      project_db_connected.value = false;
+      is_connecting_project.value = false;
+      return;
+    }
+
     const config = {
       host: project.db_host,
       user: project.db_user,
@@ -302,9 +338,7 @@ const select_project = async (selected_id: number) => {
     // @ts-ignore
     const response = await window.ipcRenderer.invoke('database_connect_request', config);
     if (response.success) {
-      project_db_connected.value = true;
-      // Dá um refresh no painel de sessoes se mudar de DB
-      // ai_sessions.value = []; // This was moved above
+      project_db_connected.value = response.offline ? false : true;
     } else {
       project_db_error.value = response.error;
       console.error('Falha ao conectar ao banco do projeto:', response.error);
@@ -317,12 +351,35 @@ const select_project = async (selected_id: number) => {
   }
 };
 
+const auto_create_local_db = async () => {
+  if (!new_project.name) return alert('Dê um nome ao projeto primeiro.');
+  is_creating_db.value = true;
+  try {
+    // @ts-ignore
+    const response = await window.ipcRenderer.invoke('project_create_local_db_request', { name: new_project.name });
+    if (response.success) {
+      new_project.db_host = response.config.host;
+      new_project.db_user = response.config.user;
+      new_project.db_pass = response.config.password;
+      new_project.db_name = response.config.database;
+      alert(`Banco de dados "${response.config.database}" criado e conectado com sucesso no localhost!`);
+    } else {
+      alert(`Não foi possível criar banco automaticamente: ${response.error}.\n\nCertifique-se que o MySQL está rodando no localhost:3306 e que o usuário root não tem senha.`);
+    }
+  } catch (err) {
+    console.error('Erro no auto-create DB:', err);
+  } finally {
+    is_creating_db.value = false;
+  }
+};
+
 /**
  * Salva um novo projeto no storage local.
  */
 const save_project = async () => {
   if (!new_project.name || !new_project.local_path) return;
   
+  new_project.no_database = !link_database.value;
   is_saving.value = true;
   try {
     // @ts-ignore
@@ -394,6 +451,8 @@ const reset_new_project = () => {
   new_project.db_user = 'root';
   new_project.db_pass = '';
   new_project.db_name = 'brain_sync';
+  new_project.no_database = false;
+  link_database.value = true;
   env_found.value = false;
 };
 
@@ -500,6 +559,14 @@ onMounted(() => {
   background-color: rgba(168, 85, 247, 0.05);
   border-color: #a855f7;
   color: #c084fc;
+}
+
+.border-dashed {
+  border-style: dashed !important;
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 
 .modal-backdrop-custom {

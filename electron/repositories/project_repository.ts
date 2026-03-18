@@ -12,6 +12,7 @@ export interface ProjectMetadata {
     db_user?: string;
     db_pass?: string;
     db_name?: string;
+    no_database?: boolean;
     created_at: string;
 }
 
