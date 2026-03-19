@@ -23,8 +23,8 @@ export interface AIReasoningSession {
 export class BrainScannerService {
     
     // Caminho base do "cérebro" do Antigravity
-    // private brain_path = 'C:\\Users\\mmedu\\.gemini\\antigravity\\brain';
-    private brain_path = 'C:\\Users\\eduardaleal\\.gemini\\antigravity\\brain';
+     private brain_path = 'C:\\Users\\mmedu\\.gemini\\antigravity\\brain';
+    
 
     constructor() {}
 
