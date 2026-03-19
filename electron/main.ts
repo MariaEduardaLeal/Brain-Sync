@@ -7,11 +7,13 @@ import { DatabaseService } from './services/database_service'
 import { ProjectRepository } from './repositories/project_repository'
 import { EnvDiscoveryService } from './services/env_discovery_service'
 import { BrainScannerService } from './services/brain_scanner_service'
+import { GitHistoryService } from './services/git_history_service'
 
 // Instancia os serviços globais
 const database_service = new DatabaseService();
 const file_watcher = new FileWatcherService();
 const env_discovery = new EnvDiscoveryService();
+const git_history_service = new GitHistoryService();
 
 // O ProjectRepository será instanciado após o app.whenReady() para acessar app.getPath()
 let project_repository: ProjectRepository;
@@ -176,13 +178,14 @@ ipcMain.handle('historical_scan_request', async (_event: IpcMainInvokeEvent, pro
         const scanner = new BrainScannerService();
         // Faz o scan apenas filtrando por artefatos que cruzaram com este projeto
         const reasoning_data = await scanner.scan_historical_data(project);
+        const enriched_reasoning_data = await git_history_service.enrich_sessions(project.local_path, reasoning_data);
         
         // Salva os resultados no banco MySQL de forma idempotente via Transação (Apenas se tiver DB)
         if (!project.no_database) {
-            await database_service.save_reasoning_scan_transaction(reasoning_data);
+            await database_service.save_reasoning_scan_transaction(enriched_reasoning_data);
         }
 
-        return { success: true, data: reasoning_data, count: reasoning_data.length, persisted: !project.no_database };
+        return { success: true, data: enriched_reasoning_data, count: enriched_reasoning_data.length, persisted: !project.no_database };
     } catch (error) {
         console.error('[Main] Erro no historical_scan_request:', error);
         return { success: false, error: String(error) };

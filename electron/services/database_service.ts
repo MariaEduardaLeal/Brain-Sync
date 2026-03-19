@@ -1,32 +1,13 @@
-import * as mysql from 'mysql2/promise';
 import * as fs from 'fs';
+import * as mysql from 'mysql2/promise';
 
-/**
- * Serviço central de gerenciamento de banco de dados MySQL.
- * 
- * Responsável por manter a conexão persistente e executar 
- * scripts de migração iniciais para garantir a consistência das tabelas.
- */
 export class DatabaseService {
     private connection_pool: mysql.Pool | null = null;
 
-    /**
-     * Configura e estabelece a conexão com o servidor MySQL.
-     * 
-     * Regra de negócio: 
-     * 1. Tenta criar o banco de dados caso ele não exista.
-     * 2. Conecta ao pool.
-     * 3. Inicializa as tabelas brain_sync_* se necessário.
-     * 
-     * @param {mysql.PoolOptions} config Objeto contendo credenciais de conexão.
-     * @param {string} schema_path Caminho do script SQL de inicialização.
-     * @return {Promise<void>}
-     */
     public async connect(config: mysql.PoolOptions, schema_path: string): Promise<void> {
         try {
-            console.log(`[DatabaseService] Verificando existência do banco "${config.database}"...`);
-            
-            // Conexão temporária sem database para criar o banco se necessário
+            console.log(`[DatabaseService] Verificando existencia do banco "${config.database}"...`);
+
             const temp_conn = await mysql.createConnection({
                 host: config.host,
                 port: config.port,
@@ -37,10 +18,6 @@ export class DatabaseService {
             await temp_conn.query(`CREATE DATABASE IF NOT EXISTS \`${config.database}\`;`);
             await temp_conn.end();
 
-            console.log(`[DatabaseService] Banco "${config.database}" garantido. Conectando pool...`);
-
-            
-            // Se já houver um pool ativo, encerra-o antes de abrir um novo (BYOD Per-Project)
             if (this.connection_pool) {
                 await this.disconnect();
             }
@@ -52,68 +29,49 @@ export class DatabaseService {
                 queueLimit: 0
             });
 
-            // Testa a conexão definitiva e inicializa o schema
             await this.connection_pool.getConnection();
-            console.log('[DatabaseService] Conexão pool estabelecida.');
-            
             await this.initialize_database(schema_path);
         } catch (error) {
-            console.error('[DatabaseService] Falha na conexão ou criação do banco:', error);
+            console.error('[DatabaseService] Falha na conexao ou criacao do banco:', error);
             throw new Error(`Erro ao conectar ao banco de dados: ${String(error)}`);
         }
     }
 
-    /**
-     * Inicializa as tabelas do sistema utilizando o script schema.sql.
-     * 
-     * @param {string} schema_path Caminho absoluto do arquivo SQL de schema.
-     * @return {Promise<void>}
-     */
     public async initialize_database(schema_path: string): Promise<void> {
         if (!this.connection_pool) {
-            throw new Error('Banco de dados não conectado.');
+            throw new Error('Banco de dados nao conectado.');
         }
 
         try {
             const sql_content = fs.readFileSync(schema_path, 'utf8');
             const queries = sql_content
                 .split(';')
-                .map(q => q.trim())
-                .filter(q => q.length > 0);
+                .map(query => query.trim())
+                .filter(query => query.length > 0);
 
-            console.log('[DatabaseService] Aplicando migrações (Schema)...');
             for (const query of queries) {
                 await this.connection_pool.query(query);
             }
+
+            await this.ensure_reasoning_columns();
             console.log('[DatabaseService] Banco de dados inicializado com sucesso.');
         } catch (error) {
-            console.error('[DatabaseService] Erro na inicialização:', error);
+            console.error('[DatabaseService] Erro na inicializacao:', error);
             throw error;
         }
     }
 
-    /**
-     * Executa uma consulta SQL no pool de conexões.
-     * 
-     * @param {string} sql String formatada do SQL.
-     * @param {any[]} params Parâmetros para prevenir SQL Injection.
-     * @return {Promise<any>}
-     */
     public async query(sql: string, params: any[] = []): Promise<any> {
         if (!this.connection_pool) {
-            throw new Error('Conexão com banco de dados indisponível.');
+            throw new Error('Conexao com banco de dados indisponivel.');
         }
+
         return await this.connection_pool.query(sql, params);
     }
 
-    /**
-     * Salva os ciclos completos de raciocínio da IA usando transação e UPSERT.
-     * 
-     * @param {any[]} reasoning_data Array de objetos contendo os logs parseados.
-     */
     public async save_reasoning_scan_transaction(reasoning_data: any[]): Promise<void> {
         if (!this.connection_pool) {
-            throw new Error('Conexão com banco de dados indisponível.');
+            throw new Error('Conexao com banco de dados indisponivel.');
         }
 
         const conn = await this.connection_pool.getConnection();
@@ -122,8 +80,7 @@ export class DatabaseService {
         try {
             for (const item of reasoning_data) {
                 const sql = `
-                    INSERT INTO brain_sync_ai_reasoning 
-                    (
+                    INSERT INTO brain_sync_ai_reasoning (
                         session_id,
                         task_content,
                         plan_content,
@@ -134,62 +91,94 @@ export class DatabaseService {
                         session_files,
                         media_files,
                         browser_recording_files,
-                        browser_recording_count
-                    ) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE 
-                    task_content = VALUES(task_content),
-                    plan_content = VALUES(plan_content),
-                    walkthrough_content = VALUES(walkthrough_content),
-                    modified_files = VALUES(modified_files),
-                    all_text_content = VALUES(all_text_content),
-                    artifact_summaries = VALUES(artifact_summaries),
-                    session_files = VALUES(session_files),
-                    media_files = VALUES(media_files),
-                    browser_recording_files = VALUES(browser_recording_files),
-                    browser_recording_count = VALUES(browser_recording_count),
-                    scanned_at = CURRENT_TIMESTAMP
+                        browser_recording_count,
+                        git_evidence
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                        task_content = VALUES(task_content),
+                        plan_content = VALUES(plan_content),
+                        walkthrough_content = VALUES(walkthrough_content),
+                        modified_files = VALUES(modified_files),
+                        all_text_content = VALUES(all_text_content),
+                        artifact_summaries = VALUES(artifact_summaries),
+                        session_files = VALUES(session_files),
+                        media_files = VALUES(media_files),
+                        browser_recording_files = VALUES(browser_recording_files),
+                        browser_recording_count = VALUES(browser_recording_count),
+                        git_evidence = VALUES(git_evidence),
+                        scanned_at = CURRENT_TIMESTAMP
                 `;
-                
-                const modified_files_json = JSON.stringify(item.modified_files || []);
-                const artifact_summaries_json = JSON.stringify(item.artifact_summaries || {});
-                const session_files_json = JSON.stringify(item.session_files || []);
-                const media_files_json = JSON.stringify(item.media_files || []);
-                const browser_recording_files_json = JSON.stringify(item.browser_recording_files || []);
-                
-                await conn.query({ sql, values: [
-                    item.session_id,
-                    item.task_content || null,
-                    item.plan_content || null,
-                    item.walkthrough_content || null,
-                    modified_files_json,
-                    item.all_text_content || null,
-                    artifact_summaries_json,
-                    session_files_json,
-                    media_files_json,
-                    browser_recording_files_json,
-                    item.browser_recording_count || 0
-                ]});
+
+                await conn.query({
+                    sql,
+                    values: [
+                        item.session_id,
+                        item.task_content || null,
+                        item.plan_content || null,
+                        item.walkthrough_content || null,
+                        JSON.stringify(item.modified_files || []),
+                        item.all_text_content || null,
+                        JSON.stringify(item.artifact_summaries || {}),
+                        JSON.stringify(item.session_files || []),
+                        JSON.stringify(item.media_files || []),
+                        JSON.stringify(item.browser_recording_files || []),
+                        item.browser_recording_count || 0,
+                        JSON.stringify(item.git_evidence || {})
+                    ]
+                });
             }
 
             await conn.commit();
-            console.log(`[DatabaseService] Transação concluída: ${reasoning_data.length} registros (Brain Scan) salvos.`);
+            console.log(`[DatabaseService] Transacao concluida: ${reasoning_data.length} registros salvos.`);
         } catch (error) {
             await conn.rollback();
-            console.error('[DatabaseService] Erro na transação de salvamento de raciocínio:', error);
+            console.error('[DatabaseService] Erro na transacao de salvamento:', error);
             throw error;
         } finally {
             conn.release();
         }
     }
 
-    /**
-     * Encerra todas as conexões ativas no pool.
-     */
     public async disconnect(): Promise<void> {
         if (this.connection_pool) {
             await this.connection_pool.end();
             this.connection_pool = null;
+        }
+    }
+
+    private async ensure_reasoning_columns(): Promise<void> {
+        if (!this.connection_pool) {
+            throw new Error('Banco de dados nao conectado.');
+        }
+
+        const required_columns = [
+            { name: 'all_text_content', definition: 'LONGTEXT' },
+            { name: 'artifact_summaries', definition: 'JSON' },
+            { name: 'session_files', definition: 'JSON' },
+            { name: 'media_files', definition: 'JSON' },
+            { name: 'browser_recording_files', definition: 'JSON' },
+            { name: 'browser_recording_count', definition: 'INT DEFAULT 0' },
+            { name: 'git_evidence', definition: 'JSON' }
+        ];
+
+        for (const column of required_columns) {
+            const [rows] = await this.connection_pool.query(
+                `
+                    SELECT COUNT(*) AS count
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'brain_sync_ai_reasoning'
+                      AND COLUMN_NAME = ?
+                `,
+                [column.name]
+            ) as any;
+
+            if (rows[0]?.count === 0) {
+                await this.connection_pool.query(
+                    `ALTER TABLE brain_sync_ai_reasoning ADD COLUMN ${column.name} ${column.definition}`
+                );
+            }
         }
     }
 }

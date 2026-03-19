@@ -108,12 +108,12 @@
         <div class="history-section mt-5">
           <h5 class="text-white mb-3 fw-bold">Últimas Tarefas Sincronizadas</h5>
           
-          <div class="empty-state text-center p-5 rounded-4 border border-secondary" v-if="project_db_connected">
+          <div class="empty-state text-center p-5 rounded-4 border border-secondary" v-if="project_db_connected && ai_sessions.length === 0">
             <span class="fs-1 opacity-50 mb-3 d-block">📭</span>
             <h6 class="text-white">Nenhum log capturado ainda</h6>
             <p class="text-muted small mb-0">Quando o Antigravity finalizar uma tarefa e você fizer o merge, o histórico aparecerá aqui.</p>
           </div>
-          <div v-else class="text-center p-5 opacity-50">
+          <div v-else-if="!active_project_no_db && !project_db_connected && ai_sessions.length === 0" class="text-center p-5 opacity-50">
              (Histórico indisponível devido a falha na conexão)
           </div>
         </div>

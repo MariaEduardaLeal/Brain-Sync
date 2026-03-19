@@ -11,16 +11,21 @@ interface ArtifactMetadata {
 }
 
 interface SessionArtifact {
-    name: string;
-    path: string;
     content: string | null;
     metadata: ArtifactMetadata | null;
-    resolved_versions: string[];
 }
 
-/**
- * Estrutura representando uma sessÃ£o completa de raciocÃ­nio da IA.
- */
+interface CachedSessionEntry {
+    stamp: number;
+    data: AIReasoningSession | null;
+}
+
+interface SessionFolderCandidate {
+    session_id: string;
+    folder_path: string;
+    stamp: number;
+}
+
 export interface AIReasoningSession {
     session_id: string;
     task_content: string | null;
@@ -39,85 +44,108 @@ export interface AIReasoningSession {
     media_files: string[];
     browser_recording_files: string[];
     browser_recording_count: number;
+    git_evidence?: {
+        repo_root: string | null;
+        branch: string | null;
+        status_files: string[];
+        matching_status_files: string[];
+        matching_recent_commits: Array<{
+            hash: string;
+            short_hash: string;
+            author_name: string;
+            authored_at: string;
+            subject: string;
+            body: string;
+            files: string[];
+        }>;
+        overlap_files: string[];
+    };
 }
 
-/**
- * ServiÃ§o responsÃ¡vel por varrer o diretÃ³rio "brain" gerado pelo Antigravity,
- * parsear os artefatos de pensamento (task, plan, walkthrough),
- * e extrair arquivos modificados e associÃ¡-los a projetos.
- */
 export class BrainScannerService {
+    private static readonly SESSION_SCAN_LIMIT = 30;
+    private static session_cache = new Map<string, CachedSessionEntry>();
+
     private antigravity_root = path.join(os.homedir(), '.gemini', 'antigravity');
     private brain_path = path.join(this.antigravity_root, 'brain');
     private browser_recordings_path = path.join(this.antigravity_root, 'browser_recordings');
 
-    constructor() {}
-
-    /**
-     * Realiza a varredura primÃ¡ria na pasta 'brain', iterando em cada subpasta (session).
-     * @param project_filter Se fornecido, retorna apenas sessÃµes que pertenÃ§am a este projeto.
-     */
     public async scan_historical_data(project_filter?: ProjectMetadata): Promise<AIReasoningSession[]> {
         if (!fs.existsSync(this.brain_path)) {
-            console.warn(`[BrainScanner] Caminho nÃ£o encontrado: ${this.brain_path}`);
+            console.warn(`[BrainScanner] Caminho nao encontrado: ${this.brain_path}`);
             return [];
         }
 
-        console.log(`[BrainScanner] Iniciando varredura em: ${this.brain_path}`);
+        const session_candidates = await this.get_recent_session_candidates();
+        const sessions: AIReasoningSession[] = [];
 
-        try {
-            const dirents = await fs.promises.readdir(this.brain_path, { withFileTypes: true });
-            const session_folders = dirents
-                .filter(dirent => dirent.isDirectory() && dirent.name !== 'tempmediaStorage')
-                .map(dirent => dirent.name);
-
-            const process_promises = session_folders.map(session_id =>
-                this.process_session_folder(session_id, project_filter)
-            );
-
-            const results = await Promise.all(process_promises);
-            const sessions = results
-                .filter((session): session is AIReasoningSession => session !== null)
-                .sort((a, b) => {
-                    const aUpdated = this.get_latest_timestamp(a);
-                    const bUpdated = this.get_latest_timestamp(b);
-                    return bUpdated.localeCompare(aUpdated);
-                });
-
-            console.log(`[BrainScanner] Varredura concluÃ­da. ${sessions.length} sessÃµes encontradas.`);
-            return sessions;
-        } catch (error) {
-            console.error('[BrainScanner] Erro fatal durante a varredura:', error);
-            throw error;
+        for (const candidate of session_candidates) {
+            const session = await this.process_session_folder(candidate, project_filter);
+            if (session) {
+                sessions.push(session);
+            }
         }
+
+        return sessions.sort((a, b) => {
+            const a_updated = this.get_latest_timestamp(a);
+            const b_updated = this.get_latest_timestamp(b);
+            return b_updated.localeCompare(a_updated);
+        });
     }
 
-    /**
-     * Processa uma Ãºnica subpasta (sessÃ£o) dentro do cÃ©rebro.
-     */
-    private async process_session_folder(session_id: string, project_filter?: ProjectMetadata): Promise<AIReasoningSession | null> {
-        const folder_path = path.join(this.brain_path, session_id);
+    private async get_recent_session_candidates(): Promise<SessionFolderCandidate[]> {
+        const dirents = await fs.promises.readdir(this.brain_path, { withFileTypes: true });
+        const candidates: SessionFolderCandidate[] = [];
+
+        for (const dirent of dirents) {
+            if (!dirent.isDirectory() || dirent.name === 'tempmediaStorage') {
+                continue;
+            }
+
+            const folder_path = path.join(this.brain_path, dirent.name);
+            try {
+                const stats = await fs.promises.stat(folder_path);
+                candidates.push({
+                    session_id: dirent.name,
+                    folder_path,
+                    stamp: stats.mtimeMs
+                });
+            } catch {
+                // Ignore broken folders and continue.
+            }
+        }
+
+        return candidates
+            .sort((a, b) => b.stamp - a.stamp)
+            .slice(0, BrainScannerService.SESSION_SCAN_LIMIT);
+    }
+
+    private async process_session_folder(candidate: SessionFolderCandidate, project_filter?: ProjectMetadata): Promise<AIReasoningSession | null> {
+        const cached = BrainScannerService.session_cache.get(candidate.session_id);
+        if (cached && cached.stamp === candidate.stamp) {
+            return this.clone_for_project_filter(cached.data, project_filter);
+        }
+
         const [task, plan, walkthrough] = await Promise.all([
-            this.load_artifact(folder_path, 'task.md'),
-            this.load_artifact(folder_path, 'implementation_plan.md'),
-            this.load_artifact(folder_path, 'walkthrough.md')
+            this.load_artifact(candidate.folder_path, 'task.md'),
+            this.load_artifact(candidate.folder_path, 'implementation_plan.md'),
+            this.load_artifact(candidate.folder_path, 'walkthrough.md')
         ]);
 
         if (!task.content && !plan.content && !walkthrough.content) {
+            BrainScannerService.session_cache.set(candidate.session_id, { stamp: candidate.stamp, data: null });
             return null;
         }
 
-        const session_files = await this.list_session_files(folder_path);
-        const media_files = session_files.filter(file => this.is_media_file(file));
-        const browser_recording_files = await this.list_browser_recording_files(session_id);
+        const session_files = await this.list_session_files_shallow(candidate.folder_path);
+        const media_files = session_files.filter(file_path => this.is_media_file(file_path));
+        const browser_recording_files = await this.list_browser_recording_preview(candidate.session_id);
+        const browser_recording_count = await this.count_browser_recording_files(candidate.session_id);
 
         const all_text_parts = [
             task.content,
-            ...task.resolved_versions,
             plan.content,
-            ...plan.resolved_versions,
             walkthrough.content,
-            ...walkthrough.resolved_versions,
             task.metadata ? JSON.stringify(task.metadata, null, 2) : null,
             plan.metadata ? JSON.stringify(plan.metadata, null, 2) : null,
             walkthrough.metadata ? JSON.stringify(walkthrough.metadata, null, 2) : null
@@ -126,35 +154,8 @@ export class BrainScannerService {
         const all_text_content = all_text_parts.join('\n\n');
         const modified_files = this.extract_file_paths(all_text_content);
 
-        if (project_filter) {
-            const association = this.match_session_to_project(project_filter, modified_files);
-            if (!association.matched) {
-                return null;
-            }
-
-            return {
-                session_id,
-                project_id: project_filter.id,
-                task_content: task.content,
-                plan_content: plan.content,
-                walkthrough_content: walkthrough.content,
-                modified_files: association.project_files,
-                match_reason: association.reason,
-                all_text_content,
-                artifact_summaries: {
-                    task: task.metadata,
-                    plan: plan.metadata,
-                    walkthrough: walkthrough.metadata
-                },
-                session_files,
-                media_files,
-                browser_recording_files,
-                browser_recording_count: browser_recording_files.length
-            };
-        }
-
-        return {
-            session_id,
+        const base_session: AIReasoningSession = {
+            session_id: candidate.session_id,
             task_content: task.content,
             plan_content: plan.content,
             walkthrough_content: walkthrough.content,
@@ -168,43 +169,45 @@ export class BrainScannerService {
             session_files,
             media_files,
             browser_recording_files,
-            browser_recording_count: browser_recording_files.length
+            browser_recording_count
+        };
+
+        BrainScannerService.session_cache.set(candidate.session_id, {
+            stamp: candidate.stamp,
+            data: base_session
+        });
+
+        return this.clone_for_project_filter(base_session, project_filter);
+    }
+
+    private clone_for_project_filter(session: AIReasoningSession | null, project_filter?: ProjectMetadata): AIReasoningSession | null {
+        if (!session) {
+            return null;
+        }
+
+        if (!project_filter) {
+            return { ...session };
+        }
+
+        const association = this.match_session_to_project(project_filter, session.modified_files);
+        if (!association.matched) {
+            return null;
+        }
+
+        return {
+            ...session,
+            project_id: project_filter.id,
+            modified_files: association.project_files,
+            match_reason: association.reason
         };
     }
 
     private async load_artifact(folder_path: string, filename: string): Promise<SessionArtifact> {
         const artifact_path = path.join(folder_path, filename);
-        const metadata_path = `${artifact_path}.metadata.json`;
-        const resolved_versions = await this.read_resolved_versions(artifact_path);
-
         return {
-            name: filename,
-            path: artifact_path,
             content: await this.read_optional_text(artifact_path),
-            metadata: await this.read_optional_json(metadata_path),
-            resolved_versions
+            metadata: await this.read_optional_json(`${artifact_path}.metadata.json`)
         };
-    }
-
-    private async read_resolved_versions(artifact_path: string): Promise<string[]> {
-        const parent = path.dirname(artifact_path);
-        const basename = path.basename(artifact_path);
-
-        if (!fs.existsSync(parent)) {
-            return [];
-        }
-
-        const dirents = await fs.promises.readdir(parent, { withFileTypes: true });
-        const resolved_files = dirents
-            .filter(dirent => dirent.isFile() && dirent.name.startsWith(`${basename}.resolved`))
-            .map(dirent => path.join(parent, dirent.name))
-            .sort();
-
-        const contents = await Promise.all(
-            resolved_files.map(file_path => this.read_optional_text(file_path))
-        );
-
-        return contents.filter((value): value is string => Boolean(value && value.trim()));
     }
 
     private async read_optional_text(file_path: string): Promise<string | null> {
@@ -214,8 +217,7 @@ export class BrainScannerService {
 
         try {
             return await fs.promises.readFile(file_path, 'utf8');
-        } catch (error) {
-            console.warn(`[BrainScanner] NÃ£o foi possÃ­vel ler texto: ${file_path}`, error);
+        } catch {
             return null;
         }
     }
@@ -228,35 +230,24 @@ export class BrainScannerService {
 
         try {
             return JSON.parse(raw);
-        } catch (error) {
-            console.warn(`[BrainScanner] NÃ£o foi possÃ­vel ler metadata JSON: ${file_path}`, error);
+        } catch {
             return null;
         }
     }
 
-    private async list_session_files(folder_path: string): Promise<string[]> {
+    private async list_session_files_shallow(folder_path: string): Promise<string[]> {
         if (!fs.existsSync(folder_path)) {
             return [];
         }
 
-        const files: string[] = [];
-        const walk = async (current_path: string): Promise<void> => {
-            const dirents = await fs.promises.readdir(current_path, { withFileTypes: true });
-            for (const dirent of dirents) {
-                const full_path = path.join(current_path, dirent.name);
-                if (dirent.isDirectory()) {
-                    await walk(full_path);
-                } else {
-                    files.push(full_path);
-                }
-            }
-        };
-
-        await walk(folder_path);
-        return files.sort();
+        const dirents = await fs.promises.readdir(folder_path, { withFileTypes: true });
+        return dirents
+            .filter(dirent => dirent.isFile())
+            .map(dirent => path.join(folder_path, dirent.name))
+            .sort();
     }
 
-    private async list_browser_recording_files(session_id: string): Promise<string[]> {
+    private async list_browser_recording_preview(session_id: string): Promise<string[]> {
         const recording_path = path.join(this.browser_recordings_path, session_id);
         if (!fs.existsSync(recording_path)) {
             return [];
@@ -265,29 +256,35 @@ export class BrainScannerService {
         const dirents = await fs.promises.readdir(recording_path, { withFileTypes: true });
         return dirents
             .filter(dirent => dirent.isFile())
-            .map(dirent => path.join(recording_path, dirent.name))
-            .sort();
+            .slice(0, 5)
+            .map(dirent => path.join(recording_path, dirent.name));
+    }
+
+    private async count_browser_recording_files(session_id: string): Promise<number> {
+        const recording_path = path.join(this.browser_recordings_path, session_id);
+        if (!fs.existsSync(recording_path)) {
+            return 0;
+        }
+
+        const dirents = await fs.promises.readdir(recording_path, { withFileTypes: true });
+        return dirents.filter(dirent => dirent.isFile()).length;
     }
 
     private match_session_to_project(project_filter: ProjectMetadata, modified_files: string[]) {
         let normalized_project_path = this.normalize_path(project_filter.local_path);
-        
-        // Garante que a barra final exista para um pareamento exato do folder.
-        // Assim "C:\app" não vai parear erradamente com "C:\app_backend\file.txt"
         if (!normalized_project_path.endsWith('\\')) {
             normalized_project_path += '\\';
         }
 
         const project_files = [...new Set(modified_files.filter(file_path => {
-            const normalized_file_path = this.normalize_path(file_path);
-            return normalized_file_path.startsWith(normalized_project_path);
+            return this.normalize_path(file_path).startsWith(normalized_project_path);
         }))];
 
         if (project_files.length > 0) {
             return {
                 matched: true,
                 project_files,
-                reason: `Detectado vínculo através de ${project_files.length} arquivo(s), ex: ${this.get_filename(project_files[0])}`
+                reason: `Detectado vinculo atraves de ${project_files.length} arquivo(s), ex: ${this.get_filename(project_files[0])}`
             };
         }
 
@@ -298,10 +295,6 @@ export class BrainScannerService {
         };
     }
 
-    /**
-     * Busca padrÃµes de links de arquivos no Markdown [NEW/MODIFY/DELETE] [nome](file:///c:/caminho)
-     * e tambÃ©m caminhos absolutos citados em texto puro.
-     */
     private extract_file_paths(content: string): string[] {
         const paths = new Set<string>();
 
@@ -329,7 +322,9 @@ export class BrainScannerService {
         let match: RegExpExecArray | null;
         while ((match = regex.exec(content)) !== null) {
             const raw = match[capture_group];
-            if (!raw) continue;
+            if (!raw) {
+                continue;
+            }
 
             const cleaned = this.clean_candidate_path(raw);
             const normalized = this.normalize_path(cleaned);
@@ -368,7 +363,6 @@ export class BrainScannerService {
 
     private get_filename(filepath: string): string {
         const base = filepath.split(/[\\/]/).pop() || filepath;
-        // Remove anchors (e.g. #L10-L20) from the filename
         return base.split('#')[0];
     }
 }

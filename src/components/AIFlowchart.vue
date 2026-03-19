@@ -24,6 +24,9 @@
           <span v-if="session.session_files?.length" class="badge bg-dark border border-secondary text-secondary x-small py-1 px-2 fw-normal">
             Arquivos da sessao: {{ session.session_files.length }}
           </span>
+          <span v-if="session.git_evidence?.branch" class="badge bg-dark border border-warning-subtle text-warning x-small py-1 px-2 fw-normal">
+            Git: {{ session.git_evidence.branch }}
+          </span>
         </div>
       </div>
       <div class="d-flex align-items-center gap-2">
@@ -40,7 +43,7 @@
       </div>
 
       <div class="flow-arrow d-none d-lg-flex align-items-center justify-content-center text-secondary fs-4">
-        <span class="arrow-icon">-></span>
+        <span class="arrow-icon">-&gt;</span>
       </div>
       <div class="flow-arrow d-lg-none d-flex align-items-center justify-content-center text-secondary fs-4 my-2">
         <span class="arrow-icon">v</span>
@@ -54,7 +57,7 @@
       </div>
 
       <div class="flow-arrow d-none d-lg-flex align-items-center justify-content-center text-secondary fs-4">
-        <span class="arrow-icon">-></span>
+        <span class="arrow-icon">-&gt;</span>
       </div>
       <div class="flow-arrow d-lg-none d-flex align-items-center justify-content-center text-secondary fs-4 my-2">
         <span class="arrow-icon">v</span>
@@ -65,6 +68,41 @@
           <span class="card-icon me-2">3.</span> Execucao
         </h6>
         <div class="markdown-body small overflow-auto pe-2" v-html="render_markdown(session.walkthrough_content)"></div>
+      </div>
+    </div>
+
+    <div v-if="session.git_evidence?.matching_recent_commits?.length || session.git_evidence?.matching_status_files?.length" class="floating-files-container mt-4 pt-3 border-top border-secondary position-relative">
+      <h6 class="fw-bold text-muted small mb-3 text-uppercase letter-spacing-2">EVIDENCIA GIT</h6>
+      <div v-if="session.git_evidence?.matching_status_files?.length" class="mb-3">
+        <div class="text-muted x-small mb-2">Arquivos com mudancas locais que cruzam com a sessao</div>
+        <div class="d-flex flex-wrap gap-2">
+          <div
+            v-for="file in session.git_evidence.matching_status_files"
+            :key="`status-${file}`"
+            class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
+          >
+            <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="session.git_evidence?.matching_recent_commits?.length">
+        <div class="text-muted x-small mb-2">Commits recentes que tocam os mesmos arquivos</div>
+        <div class="d-flex flex-column gap-2">
+          <div
+            v-for="commit in session.git_evidence.matching_recent_commits"
+            :key="commit.hash"
+            class="commit-card rounded-3 px-3 py-2 border"
+          >
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <span class="badge bg-dark text-warning border border-warning-subtle">{{ commit.short_hash }}</span>
+              <span class="text-white small">{{ commit.subject }}</span>
+            </div>
+            <div class="text-muted x-small">
+              {{ commit.author_name }} - {{ format_datetime(commit.authored_at) }}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -113,6 +151,22 @@ const props = defineProps<{
     media_files?: string[];
     session_files?: string[];
     browser_recording_count?: number;
+    git_evidence?: {
+      repo_root: string | null;
+      branch: string | null;
+      status_files: string[];
+      matching_status_files: string[];
+      matching_recent_commits: Array<{
+        hash: string;
+        short_hash: string;
+        author_name: string;
+        authored_at: string;
+        subject: string;
+        body: string;
+        files: string[];
+      }>;
+      overlap_files: string[];
+    };
   }
 }>();
 
@@ -120,7 +174,8 @@ const has_session_metrics = computed(() => {
   return Boolean(
     props.session.media_files?.length ||
     props.session.session_files?.length ||
-    props.session.browser_recording_count
+    props.session.browser_recording_count ||
+    props.session.git_evidence?.branch
   );
 });
 
@@ -139,6 +194,13 @@ const get_filename = (filepath: string) => {
   if (!filepath) return 'Desconhecido';
   const base = filepath.split(/\\|\//).pop() || filepath;
   return base.split('#')[0];
+};
+
+const format_datetime = (value: string) => {
+  if (!value) return 'Data desconhecida';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 };
 </script>
 
@@ -271,15 +333,20 @@ const get_filename = (filepath: string) => {
   transition: all 0.3s;
 }
 
-.file-badge {
+.file-badge,
+.commit-card {
   background: rgba(30, 41, 59, 0.6);
   border-color: rgba(59, 130, 246, 0.2) !important;
   color: #94a3b8;
-  animation: float 4s ease-in-out infinite;
   backdrop-filter: blur(4px);
 }
 
-.file-badge:hover {
+.file-badge {
+  animation: float 4s ease-in-out infinite;
+}
+
+.file-badge:hover,
+.commit-card:hover {
   animation-play-state: paused;
   border-color: #60a5fa !important;
   color: #fff;
@@ -293,4 +360,5 @@ const get_filename = (filepath: string) => {
 
 .letter-spacing-2 { letter-spacing: 2px; }
 .italic { font-style: italic; }
+.x-small { font-size: 0.75rem; }
 </style>
