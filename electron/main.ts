@@ -50,9 +50,12 @@ function createWindow() {
     },
   })
 
+
+  console.log("[Main] Janela do Electron criada com sucesso.");
+
   // Inicia o monitoramento dos logs do Antigravity
   const target_path = get_antigravity_brain_path();
-  
+
   file_watcher.start_watching(target_path, (file_path, content) => {
     if (win) {
       console.log(`[Main] Disparando evento worklog_updated_event para: ${file_path}`);
