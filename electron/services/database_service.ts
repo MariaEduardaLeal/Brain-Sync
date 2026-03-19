@@ -123,24 +123,52 @@ export class DatabaseService {
             for (const item of reasoning_data) {
                 const sql = `
                     INSERT INTO brain_sync_ai_reasoning 
-                    (session_id, task_content, plan_content, walkthrough_content, modified_files) 
-                    VALUES (?, ?, ?, ?, ?)
+                    (
+                        session_id,
+                        task_content,
+                        plan_content,
+                        walkthrough_content,
+                        modified_files,
+                        all_text_content,
+                        artifact_summaries,
+                        session_files,
+                        media_files,
+                        browser_recording_files,
+                        browser_recording_count
+                    ) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE 
                     task_content = VALUES(task_content),
                     plan_content = VALUES(plan_content),
                     walkthrough_content = VALUES(walkthrough_content),
                     modified_files = VALUES(modified_files),
+                    all_text_content = VALUES(all_text_content),
+                    artifact_summaries = VALUES(artifact_summaries),
+                    session_files = VALUES(session_files),
+                    media_files = VALUES(media_files),
+                    browser_recording_files = VALUES(browser_recording_files),
+                    browser_recording_count = VALUES(browser_recording_count),
                     scanned_at = CURRENT_TIMESTAMP
                 `;
                 
                 const modified_files_json = JSON.stringify(item.modified_files || []);
+                const artifact_summaries_json = JSON.stringify(item.artifact_summaries || {});
+                const session_files_json = JSON.stringify(item.session_files || []);
+                const media_files_json = JSON.stringify(item.media_files || []);
+                const browser_recording_files_json = JSON.stringify(item.browser_recording_files || []);
                 
                 await conn.query({ sql, values: [
                     item.session_id,
                     item.task_content || null,
                     item.plan_content || null,
                     item.walkthrough_content || null,
-                    modified_files_json
+                    modified_files_json,
+                    item.all_text_content || null,
+                    artifact_summaries_json,
+                    session_files_json,
+                    media_files_json,
+                    browser_recording_files_json,
+                    item.browser_recording_count || 0
                 ]});
             }
 

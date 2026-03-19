@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, dialog } from 'electron'
 import { fileURLToPath } from 'node:url'
+import os from 'node:os'
 import path from 'node:path'
 import { FileWatcherService } from './services/file_watcher_service'
 import { DatabaseService } from './services/database_service'
@@ -37,6 +38,10 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 
+function get_antigravity_brain_path() {
+  return path.join(os.homedir(), '.gemini', 'antigravity', 'brain')
+}
+
 function createWindow() {
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
@@ -46,7 +51,7 @@ function createWindow() {
   })
 
   // Inicia o monitoramento dos logs do Antigravity
-  const target_path = 'C:\\Users\\mmedu\\.gemini\\antigravity\\brain';
+  const target_path = get_antigravity_brain_path();
   
   file_watcher.start_watching(target_path, (file_path, content) => {
     if (win) {

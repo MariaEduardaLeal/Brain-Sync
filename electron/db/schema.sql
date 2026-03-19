@@ -11,5 +11,18 @@ CREATE TABLE IF NOT EXISTS brain_sync_ai_reasoning (
     plan_content LONGTEXT,
     walkthrough_content LONGTEXT,
     modified_files JSON,
+    all_text_content LONGTEXT,
+    artifact_summaries JSON,
+    session_files JSON,
+    media_files JSON,
+    browser_recording_files JSON,
+    browser_recording_count INT DEFAULT 0,
     scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE brain_sync_ai_reasoning ADD COLUMN IF NOT EXISTS all_text_content LONGTEXT;
+ALTER TABLE brain_sync_ai_reasoning ADD COLUMN IF NOT EXISTS artifact_summaries JSON;
+ALTER TABLE brain_sync_ai_reasoning ADD COLUMN IF NOT EXISTS session_files JSON;
+ALTER TABLE brain_sync_ai_reasoning ADD COLUMN IF NOT EXISTS media_files JSON;
+ALTER TABLE brain_sync_ai_reasoning ADD COLUMN IF NOT EXISTS browser_recording_files JSON;
+ALTER TABLE brain_sync_ai_reasoning ADD COLUMN IF NOT EXISTS browser_recording_count INT DEFAULT 0;

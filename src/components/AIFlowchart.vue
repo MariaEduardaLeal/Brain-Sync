@@ -1,18 +1,28 @@
 <template>
   <div class="ai-flowchart-container mb-5 p-4 rounded-4 shadow-2xl border border-secondary bg-black-70 position-relative overflow-hidden">
-    <!-- Glow Background Effects -->
     <div class="glow-orb glow-purple"></div>
     <div class="glow-orb glow-blue"></div>
 
     <div class="session-header mb-4 d-flex justify-content-between align-items-center position-relative z-1">
       <div>
         <h5 class="fw-bold ai-gradient-text mb-1 d-flex align-items-center">
-          <span class="fs-4 me-2">🧠</span> Sessão de Raciocínio da IA
+          <span class="fs-4 me-2">Brain</span> Sessao de Raciocinio da IA
         </h5>
         <small class="text-muted text-monospace d-block">ID: {{ session.session_id }}</small>
         <div v-if="session.match_reason" class="mt-2">
           <span class="badge bg-dark border border-secondary text-secondary x-small py-1 px-2 fw-normal opacity-75">
-            🔍 {{ session.match_reason }}
+            Vinculo: {{ session.match_reason }}
+          </span>
+        </div>
+        <div v-if="has_session_metrics" class="d-flex flex-wrap gap-2 mt-2">
+          <span v-if="session.media_files?.length" class="badge bg-dark border border-info-subtle text-info x-small py-1 px-2 fw-normal">
+            Midia: {{ session.media_files.length }}
+          </span>
+          <span v-if="session.browser_recording_count" class="badge bg-dark border border-primary-subtle text-primary x-small py-1 px-2 fw-normal">
+            Frames browser: {{ session.browser_recording_count }}
+          </span>
+          <span v-if="session.session_files?.length" class="badge bg-dark border border-secondary text-secondary x-small py-1 px-2 fw-normal">
+            Arquivos da sessao: {{ session.session_files.length }}
           </span>
         </div>
       </div>
@@ -21,58 +31,67 @@
       </div>
     </div>
 
-    <!-- Fluxograma -->
     <div class="d-flex align-items-stretch justify-content-between gap-3 flow-row flex-column flex-lg-row position-relative z-1">
-      <!-- Pedido -->
       <div class="flow-card card-pedido flex-grow-1 p-3 rounded-4 shadow-lg border border-warning-subtle position-relative overflow-hidden">
         <h6 class="fw-bold text-warning mb-3 pb-2 border-bottom border-warning-subtle d-flex align-items-center">
-          <span class="card-icon me-2">📝</span> 1. O Pedido
+          <span class="card-icon me-2">1.</span> O Pedido
         </h6>
         <div class="markdown-body small overflow-auto pe-2" v-html="render_markdown(session.task_content)"></div>
       </div>
-      
+
       <div class="flow-arrow d-none d-lg-flex align-items-center justify-content-center text-secondary fs-4">
-        <span class="arrow-icon">➔</span>
+        <span class="arrow-icon">-></span>
       </div>
       <div class="flow-arrow d-lg-none d-flex align-items-center justify-content-center text-secondary fs-4 my-2">
-        <span class="arrow-icon">⬇</span>
+        <span class="arrow-icon">v</span>
       </div>
 
-      <!-- Plano -->
       <div class="flow-card card-plano flex-grow-1 p-3 rounded-4 shadow-lg border border-primary-subtle position-relative overflow-hidden">
         <h6 class="fw-bold text-info mb-3 pb-2 border-bottom border-primary-subtle d-flex align-items-center">
-          <span class="card-icon me-2">🗺️</span> 2. O Plano
+          <span class="card-icon me-2">2.</span> O Plano
         </h6>
         <div class="markdown-body small overflow-auto pe-2" v-html="render_markdown(session.plan_content)"></div>
       </div>
 
       <div class="flow-arrow d-none d-lg-flex align-items-center justify-content-center text-secondary fs-4">
-        <span class="arrow-icon">➔</span>
+        <span class="arrow-icon">-></span>
       </div>
       <div class="flow-arrow d-lg-none d-flex align-items-center justify-content-center text-secondary fs-4 my-2">
-        <span class="arrow-icon">⬇</span>
+        <span class="arrow-icon">v</span>
       </div>
 
-      <!-- Execução -->
       <div class="flow-card card-execucao flex-grow-1 p-3 rounded-4 shadow-lg border border-success-subtle position-relative overflow-hidden">
         <h6 class="fw-bold text-success mb-3 pb-2 border-bottom border-success-subtle d-flex align-items-center">
-          <span class="card-icon me-2">⚡</span> 3. Execução
+          <span class="card-icon me-2">3.</span> Execucao
         </h6>
         <div class="markdown-body small overflow-auto pe-2" v-html="render_markdown(session.walkthrough_content)"></div>
       </div>
     </div>
 
-    <!-- Arquivos Flutuantes -->
     <div class="floating-files-container mt-4 pt-3 border-top border-secondary position-relative" v-if="session.modified_files && session.modified_files.length > 0">
       <h6 class="fw-bold text-muted small mb-3 text-uppercase letter-spacing-2">ARQUIVOS MODIFICADOS</h6>
       <div class="d-flex flex-wrap gap-2 position-relative pt-2">
-        <div 
-          v-for="(file, index) in session.modified_files" 
-          :key="file" 
+        <div
+          v-for="(file, index) in session.modified_files"
+          :key="file"
           class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
           :style="{ animationDelay: `${(index % 8) * 0.2}s` }"
         >
-          <span class="file-icon me-2">📄</span>
+          <span class="file-icon me-2">FILE</span>
+          <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="floating-files-container mt-4 pt-3 border-top border-secondary position-relative" v-if="session.media_files && session.media_files.length > 0">
+      <h6 class="fw-bold text-muted small mb-3 text-uppercase letter-spacing-2">ARTEFATOS DE MIDIA</h6>
+      <div class="d-flex flex-wrap gap-2 position-relative pt-2">
+        <div
+          v-for="file in session.media_files"
+          :key="file"
+          class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
+        >
+          <span class="file-icon me-2">IMG</span>
           <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
         </div>
       </div>
@@ -81,10 +100,11 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { marked } from 'marked';
 import filterXSS from 'xss';
 
-defineProps<{
+const props = defineProps<{
   session: {
     session_id: string;
     task_content: string | null;
@@ -92,11 +112,22 @@ defineProps<{
     walkthrough_content: string | null;
     modified_files: string[];
     match_reason?: string;
+    media_files?: string[];
+    session_files?: string[];
+    browser_recording_count?: number;
   }
 }>();
 
+const has_session_metrics = computed(() => {
+  return Boolean(
+    props.session.media_files?.length ||
+    props.session.session_files?.length ||
+    props.session.browser_recording_count
+  );
+});
+
 const render_markdown = (content: string | null) => {
-  if (!content) return '<p class="text-muted italic opacity-50">Conteúdo não disponível.</p>';
+  if (!content) return '<p class="text-muted italic opacity-50">Conteudo nao disponivel.</p>';
   try {
     const raw = marked(content);
     return filterXSS(raw as string);
@@ -138,7 +169,6 @@ const get_filename = (filepath: string) => {
   letter-spacing: 1px;
 }
 
-/* Cards de Fluxo Estilizados */
 .flow-card {
   background-color: rgba(30, 41, 59, 0.3);
   backdrop-filter: blur(8px);
@@ -162,12 +192,11 @@ const get_filename = (filepath: string) => {
 .card-execucao { border-color: rgba(25, 135, 84, 0.1) !important; }
 .card-execucao:hover { border-color: rgba(25, 135, 84, 0.4) !important; box-shadow: 0 0 15px rgba(25, 135, 84, 0.1) !important; }
 
-/* Markdown Styling dentro dos cards */
 .markdown-body {
   color: #94a3b8;
   line-height: 1.5;
-  scrollbar-width: auto; /* Força scrollbar visível quando necessário */
-  scrollbar-color: #3b82f6 rgba(255,255,255,0.05); /* Blue scrollbar */
+  scrollbar-width: auto;
+  scrollbar-color: #3b82f6 rgba(255, 255, 255, 0.05);
 }
 
 .markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) {
@@ -183,7 +212,7 @@ const get_filename = (filepath: string) => {
 }
 
 .markdown-body :deep(code) {
-  background-color: rgba(0,0,0,0.3);
+  background-color: rgba(0, 0, 0, 0.3);
   padding: 0.1rem 0.3rem;
   border-radius: 4px;
   color: #cbd5e1;
@@ -195,24 +224,25 @@ const get_filename = (filepath: string) => {
   margin-bottom: 0.75rem;
 }
 
-/* Scrollbar estilizada - Webkit */
-.markdown-body::-webkit-scrollbar { 
-  width: 6px; 
+.markdown-body::-webkit-scrollbar {
+  width: 6px;
 }
-.markdown-body::-webkit-scrollbar-track { 
-  background: rgba(0, 0, 0, 0.2); 
+
+.markdown-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
   border-radius: 10px;
 }
-.markdown-body::-webkit-scrollbar-thumb { 
-  background: #3b82f6; 
+
+.markdown-body::-webkit-scrollbar-thumb {
+  background: #3b82f6;
   border-radius: 10px;
   box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
 }
+
 .markdown-body::-webkit-scrollbar-thumb:hover {
   background: #60a5fa;
 }
 
-/* Efeitos Visuais extras */
 .glow-orb {
   position: absolute;
   width: 200px;
@@ -238,7 +268,6 @@ const get_filename = (filepath: string) => {
   transition: all 0.3s;
 }
 
-/* Floating Files */
 .file-badge {
   background: rgba(30, 41, 59, 0.6);
   border-color: rgba(59, 130, 246, 0.2) !important;
