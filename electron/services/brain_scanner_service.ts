@@ -367,6 +367,8 @@ export class BrainScannerService {
     }
 
     private get_filename(filepath: string): string {
-        return filepath.split(/[\\/]/).pop() || filepath;
+        const base = filepath.split(/[\\/]/).pop() || filepath;
+        // Remove anchors (e.g. #L10-L20) from the filename
+        return base.split('#')[0];
     }
 }

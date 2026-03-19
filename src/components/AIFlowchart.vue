@@ -77,7 +77,6 @@
           class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
           :style="{ animationDelay: `${(index % 8) * 0.2}s` }"
         >
-          <span class="file-icon me-2">FILE</span>
           <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
         </div>
       </div>
@@ -91,7 +90,6 @@
           :key="file"
           class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
         >
-          <span class="file-icon me-2">IMG</span>
           <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
         </div>
       </div>
@@ -139,7 +137,8 @@ const render_markdown = (content: string | null) => {
 
 const get_filename = (filepath: string) => {
   if (!filepath) return 'Desconhecido';
-  return filepath.split(/\\|\//).pop() || filepath;
+  const base = filepath.split(/\\|\//).pop() || filepath;
+  return base.split('#')[0];
 };
 </script>
 
@@ -174,6 +173,8 @@ const get_filename = (filepath: string) => {
   backdrop-filter: blur(8px);
   min-height: 250px;
   max-height: 550px;
+  display: flex;
+  flex-direction: column;
   transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
   border-width: 1px !important;
 }
@@ -197,6 +198,8 @@ const get_filename = (filepath: string) => {
   line-height: 1.5;
   scrollbar-width: auto;
   scrollbar-color: #3b82f6 rgba(255, 255, 255, 0.05);
+  flex: 1;
+  min-height: 0;
 }
 
 .markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) {
