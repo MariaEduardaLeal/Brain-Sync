@@ -1,73 +1,121 @@
-# 🧠 Brain-Sync: IA Organizational Memory
+# Brain-Sync
 
-**Brain-Sync** é um aplicativo desktop desenvolvido com **Electron**, **Vue 3** e **TypeScript**, projetado para atuar como um "Provedor de Contexto (Context as a Service)". O objetivo central é capturar, estruturar e gerenciar a "memória organizacional" das interações com IAs (como o Antigravity), permitindo que logs de execução e walkthroughs sejam transformados em conhecimento útil para futuras sessões e onboarding.
+Brain-Sync e um app desktop em Electron + Vue para transformar o que o Antigravity produz em um contexto reutilizavel de projeto.
 
-![Aesthetic Dashboard](https://img.shields.io/badge/UI-Premium_Dark-blueviolet)
-![Architecture](https://img.shields.io/badge/Architecture-Decentralized_BYOD-blue)
+Hoje ele funciona com tres pilares:
 
-## 🚀 Visão Geral
+- leitura dos artefatos do Antigravity em disco
+- enriquecimento com Git por sessao
+- arquivamento proprio em um vault local, para nao depender do Antigravity manter tudo para sempre
 
-Diferente de sistemas centralizados, o Brain-Sync adota uma abordagem **BYOD (Bring Your Own Database)** descentralizada:
-- **Metadados Locais**: A lista de projetos e configurações é mantida em um repositório JSON local.
-- **Isolamento de Dados**: Cada projeto possui seu próprio banco de dados MySQL, garantindo que os logs de desenvolvimento fiquem junto com o código/projeto do usuário.
-- **Contexto Vivo**: Monitora em tempo real a criação de artefatos (como `walkthrough.md`) e os sincroniza automaticamente com o banco de dados.
+## O que mudou
 
-## ✨ Funcionalidades Principais
+As ultimas mudancas deixaram o app com este comportamento:
 
-- **Auto-Discovery**: Ao adicionar um novo projeto, o app faz o *probing* automático do arquivo `.env` para extrair credenciais do MySQL.
-- **Auto-Schema**: Se o banco de dados do projeto não existir ou estiver vazio, o Brain-Sync inicializa as tabelas necessárias automaticamente.
-- **Monitoramento Ativo**: Utiliza `Chokidar` para observar mudanças no sistema de arquivos e capturar logs assim que são gerados pela IA.
-- **UI Premium**: Interface construída com **Bootstrap 5**, utilizando conceitos de *Glassmorphism*, animações suaves e um Dark Mode otimizado para desenvolvedores.
+- removeu a dependencia de MySQL por projeto
+- usa o filesystem do Antigravity como fonte primaria
+- cruza `task.md`, `implementation_plan.md`, `walkthrough.md`, snapshots `.resolved`, conversas `.pb`, midias e browser recordings
+- enriquece as sessoes com branch, commits relacionados, arquivos cruzados e URL remota do Git quando existir
+- salva scans completos em um vault proprio do Brain-Sync
+- ao abrir um projeto, tenta carregar primeiro o ultimo scan salvo no vault, sem obrigar novo scan
+- adiciona um gerenciador do armazenamento do Antigravity
+- permite excluir browser recordings dentro do app, com aviso de que a exclusao e irreversivel
+- move o fluxograma para uma visualizacao separada por sessao, via botao `Ver fluxograma`
 
-## 🛠️ Stack Tecnológica
+## Fluxo atual
 
-- **Frontend**: Vue 3 (Composition API), Vite, Bootstrap 5.
-- **Backend/Desktop**: Electron, Node.js.
-- **Banco de Dados**: MySQL (via `mysql2/promise`).
-- **Serviços**: File Watcher (Chokidar), Env Discovery (Dotenv).
+1. O usuario registra um projeto apontando para a pasta local do repo.
+2. O Brain-Sync cria ou reutiliza um vault local para esse projeto.
+3. Ao escanear, o app:
+   - le as sessoes do Antigravity
+   - tenta associar cada sessao ao projeto pelos arquivos detectados
+   - cruza a sessao com o Git do repo
+   - salva tudo no vault
+4. Ao clicar no projeto depois, o app tenta abrir o ultimo scan salvo no vault.
 
-## ⚙️ Instalação e Uso
+## Vault local
 
-### Requisitos
-- [Node.js](https://nodejs.org/) (versão LTS recomendada).
-- Servidor MySQL ativo (local ou remoto).
+Por padrao o Brain-Sync guarda os dados em:
 
-### Passos
-1. Clone este repositório:
-   ```bash
-   git clone https://github.com/seu-usuario/brain_sync_desktop.git
-   ```
-2. Instale as dependências:
-   ```bash
-   npm install
-   ```
-3. Inicie o ambiente de desenvolvimento:
-   ```bash
-   npm run dev
-   ```
+`C:\Users\<usuario>\BrainSyncVault`
 
-## 📂 Estrutura do Projeto
+Estrutura:
 
-- `src/`: Código fonte do frontend (Vue components, assets).
-- `electron/`: Lógica do processo principal, serviços e repositórios.
-- `electron/db/schema.sql`: Script de inicialização das tabelas do projeto.
-- `electron/services/`: Serviços especializados (Watcher, Database, Env Discovery).
+```text
+BrainSyncVault/
+  projects/
+    <project-id>-<project-slug>/
+      project.json
+      scans/
+        latest_scan.json
+        latest_sessions.json
+        2026-03-21T...json
+      sessions/
+        <session-id>/
+          session.json
+          artifacts/
+            <copias-dos-arquivos-da-sessao>
+```
 
----
-*Desenvolvido para transformar logs de IA em inteligência organizacional.*
+Descricao:
 
-## 👨‍💻 Como Distribuir o App (Build)
+- `project.json`: metadados do projeto e local do vault
+- `scans/latest_scan.json`: resumo do ultimo scan
+- `scans/latest_sessions.json`: sessoes completas do ultimo scan, usadas para abrir o projeto sem reescanear
+- `scans/<timestamp>.json`: historico de scans completos
+- `sessions/<session-id>/session.json`: payload completo da sessao
+- `sessions/<session-id>/artifacts/`: copia local dos artefatos encontrados para aquela sessao
 
-Para gerar o executável (.exe) e enviar para alguém:
+Detalhamento extra da estrutura em [docs/VAULT_STRUCTURE.md](./docs/VAULT_STRUCTURE.md).
 
-1.  No terminal do projeto, rode:
-    ```bash
-    npm run build
-    ```
-2.  Aguarde o processo finalizar. Uma pasta chamada `release/0.0.0` (ou a versão atual) será criada.
-3.  Dentro dessa pasta, você encontrará o arquivo:
-    *   `Brain-Sync-Windows-0.0.0-Setup.exe` (Instalador padrão).
-4.  Basta enviar esse arquivo `.exe` para a pessoa!
+## Fontes lidas do Antigravity
 
-> [!TIP]
-> Você também pode encontrar uma pasta `win-unpacked` dentro de `release` se quiser rodar o app sem instalar em outras máquinas Windows.
+O app observa principalmente:
+
+- `~/.gemini/antigravity/brain`
+- `~/.gemini/antigravity/conversations`
+- `~/.gemini/antigravity/browser_recordings`
+
+## Gerenciador do Antigravity
+
+O Brain-Sync ja exibe um resumo de armazenamento do Antigravity e lista as sessoes de `browser_recordings`.
+
+No estado atual:
+
+- mostra tamanho e contagem de arquivos por bucket
+- lista sessoes de browser recordings ordenadas por tamanho
+- permite excluir uma sessao de browser recording
+
+Atencao:
+
+- a exclusao feita por esse gerenciador remove os arquivos do Antigravity
+- essa acao nao pode ser desfeita pelo app
+
+## Fluxograma
+
+Cada sessao agora tem um botao `Ver fluxograma`.
+
+Essa visualizacao:
+
+- abre em modal separado
+- mostra bolinhas para sessao, artefatos e arquivos modificados
+- permite arrastar os nodes para explorar as ligacoes
+
+## Limites atuais
+
+- o app ainda nao decodifica o `.pb` para mostrar o prompt original exato digitado pelo usuario
+- a associacao de commits por sessao continua sendo heuristica, baseada em arquivos e proximidade temporal
+- o fluxograma atual e uma visualizacao interativa simples, nao um parser completo da conversa
+
+## Desenvolvimento
+
+```bash
+npm install
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+```

@@ -1,42 +1,31 @@
-import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, dialog } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent } from 'electron'
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
 import path from 'node:path'
-import { FileWatcherService } from './services/file_watcher_service'
-import { DatabaseService } from './services/database_service'
 import { ProjectRepository } from './repositories/project_repository'
-import { EnvDiscoveryService } from './services/env_discovery_service'
+import { FileWatcherService } from './services/file_watcher_service'
 import { BrainScannerService } from './services/brain_scanner_service'
+import { GitHistoryService } from './services/git_history_service'
+import { ProjectContextArchiveService } from './services/project_context_archive_service'
+import { AntigravityStorageService } from './services/antigravity_storage_service'
 
-// Instancia os serviços globais
-const database_service = new DatabaseService();
-const file_watcher = new FileWatcherService();
-const env_discovery = new EnvDiscoveryService();
+const file_watcher = new FileWatcherService()
+const git_history_service = new GitHistoryService()
+const archive_service = new ProjectContextArchiveService()
+const antigravity_storage_service = new AntigravityStorageService()
 
-// O ProjectRepository será instanciado após o app.whenReady() para acessar app.getPath()
-let project_repository: ProjectRepository;
+let project_repository: ProjectRepository
+let win: BrowserWindow | null
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// The built directory structure
-//
-// ├─┬─┬ dist
-// │ │ └── index.html
-// │ │
-// │ ├─┬ dist-electron
-// │ │ ├── main.js
-// │ │ └── preload.mjs
-// │
 process.env.APP_ROOT = path.join(__dirname, '..')
 
-// 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
-
-let win: BrowserWindow | null
 
 function get_antigravity_brain_path() {
   return path.join(os.homedir(), '.gemini', 'antigravity', 'brain')
@@ -50,39 +39,29 @@ function createWindow() {
     },
   })
 
-
-  console.log("[Main] Janela do Electron criada com sucesso.");
-
-  // Inicia o monitoramento dos logs do Antigravity
-  const target_path = get_antigravity_brain_path();
-
-  file_watcher.start_watching(target_path, (file_path, content) => {
-    if (win) {
-      console.log(`[Main] Disparando evento worklog_updated_event para: ${file_path}`);
-      win.webContents.send('worklog_updated_event', {
-          file_path: file_path,
-          content: content,
-          timestamp: new Date().toISOString()
-      });
+  file_watcher.start_watching(get_antigravity_brain_path(), (file_path, content) => {
+    if (!win) {
+      return
     }
-  });
 
-  // Test active push message to Renderer-process.
+    win.webContents.send('worklog_updated_event', {
+      file_path,
+      content,
+      timestamp: new Date().toISOString(),
+    })
+  })
+
   win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', (new Date).toLocaleString())
+    win?.webContents.send('main-process-message', new Date().toLocaleString())
   })
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
   } else {
-    // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
 }
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
@@ -91,140 +70,155 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
   }
 })
 
-// --- Handlers IPC de Banco de Dados e Projetos ---
-
-/**
- * Canal para conectar ao banco de dados de um projeto e inicializar o schema.
- */
 ipcMain.handle('database_connect_request', async (_event: IpcMainInvokeEvent, config: any) => {
-    try {
-        if (!config || !config.host) {
-            console.log('[Main] Pulo de conexão: Configuração de banco ausente ou Modo Offline.');
-            return { success: true, offline: true };
-        }
-        const schema_path = path.join(process.env.APP_ROOT, 'electron/db/schema.sql');
-        await database_service.connect(config, schema_path);
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: String(error) };
-    }
-});
+  return { success: true, offline: true, deprecated: true, config }
+})
 
-/**
- * Canal para salvar um novo projeto no JSON local.
- */
 ipcMain.handle('project_save_request', async (_event: IpcMainInvokeEvent, project_data: any) => {
-    try {
-        const project_id = project_repository.save_project(project_data);
-        return { success: true, id: project_id };
-    } catch (error) {
-        return { success: false, error: String(error) };
+  try {
+    const draft_project = {
+      ...project_data,
+      no_database: true,
+      created_at: new Date().toISOString(),
     }
-});
 
-/**
- * Canal para listar todos os projetos do JSON local.
- */
+    const project_id = project_repository.save_project(draft_project)
+    const saved_project = project_repository.get_project_by_id(project_id)
+
+    if (!saved_project) {
+      throw new Error('Projeto salvo, mas nao foi possivel recarregar os metadados.')
+    }
+
+    const vault_path = archive_service.ensure_project_vault(saved_project)
+    saved_project.vault_path = vault_path
+    project_repository.update_project(saved_project)
+
+    return { success: true, id: project_id, vault_path }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
 ipcMain.handle('project_list_request', async () => {
-    try {
-        const projects = project_repository.get_all_projects();
-        return { success: true, projects };
-    } catch (error) {
-        return { success: false, error: String(error) };
-    }
-});
+  try {
+    const projects = project_repository.get_all_projects().map(project => ({
+      ...project,
+      no_database: true,
+      vault_path: archive_service.ensure_project_vault(project),
+    }))
+    return { success: true, projects }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
 
-/**
- * Canal para tentar descobrir credenciais de banco em um projeto.
- */
 ipcMain.handle('project_probe_env_request', async (_event: IpcMainInvokeEvent, project_path: string) => {
-    try {
-        const credentials = env_discovery.probe_project_env(project_path);
-        return { success: true, credentials };
-    } catch (error) {
-        return { success: false, error: String(error) };
-    }
-});
+  return { success: true, credentials: null, deprecated: true, project_path }
+})
 
-/**
- * Canal para deletar um projeto do JSON local.
- */
 ipcMain.handle('project_delete_request', async (_event: IpcMainInvokeEvent, project_id: number) => {
-    try {
-        const success = project_repository.delete_project(project_id);
-        return { success };
-    } catch (error) {
-        return { success: false, error: String(error) };
-    }
-});
+  try {
+    const success = project_repository.delete_project(project_id)
+    return { success }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
 
-/**
- * Canal para executar a varredura do histórico da IA e salvar no banco do projeto.
- */
 ipcMain.handle('historical_scan_request', async (_event: IpcMainInvokeEvent, project_id: number) => {
-    try {
-        const project = project_repository.get_project_by_id(project_id);
-        if (!project) throw new Error('Projeto não encontrado nos registros locais.');
-
-        const scanner = new BrainScannerService();
-        // Faz o scan apenas filtrando por artefatos que cruzaram com este projeto
-        const reasoning_data = await scanner.scan_historical_data(project);
-        
-        // Salva os resultados no banco MySQL de forma idempotente via Transação (Apenas se tiver DB)
-        if (!project.no_database) {
-            await database_service.save_reasoning_scan_transaction(reasoning_data);
-        }
-
-        return { success: true, data: reasoning_data, count: reasoning_data.length, persisted: !project.no_database };
-    } catch (error) {
-        console.error('[Main] Erro no historical_scan_request:', error);
-        return { success: false, error: String(error) };
+  try {
+    const project = project_repository.get_project_by_id(project_id)
+    if (!project) {
+      throw new Error('Projeto nao encontrado nos registros locais.')
     }
-});
 
-/**
- * Canal para tentar criar um banco de dados local automaticamente.
- */
+    project.vault_path = archive_service.ensure_project_vault(project)
+    project_repository.update_project(project)
+
+    const scanner = new BrainScannerService()
+    const reasoning_data = await scanner.scan_historical_data(project)
+    const enriched_reasoning_data = await git_history_service.enrich_sessions(project.local_path, reasoning_data)
+
+    archive_service.archive_project_scan(project, enriched_reasoning_data)
+
+    return {
+      success: true,
+      data: enriched_reasoning_data,
+      count: enriched_reasoning_data.length,
+      persisted: true,
+      vault_path: project.vault_path,
+    }
+  } catch (error) {
+    console.error('[Main] Erro no historical_scan_request:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('project_cached_scan_request', async (_event: IpcMainInvokeEvent, project_id: number) => {
+  try {
+    const project = project_repository.get_project_by_id(project_id)
+    if (!project) {
+      throw new Error('Projeto nao encontrado nos registros locais.')
+    }
+
+    project.vault_path = archive_service.ensure_project_vault(project)
+    project_repository.update_project(project)
+
+    const sessions = archive_service.load_latest_scan(project)
+    return {
+      success: true,
+      data: sessions,
+      count: sessions.length,
+      vault_path: project.vault_path
+    }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('antigravity_storage_request', async () => {
+  try {
+    return {
+      success: true,
+      data: antigravity_storage_service.get_storage_summary(),
+      vault_root: archive_service.get_vault_root()
+    }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('antigravity_delete_recording_request', async (_event: IpcMainInvokeEvent, session_id: string) => {
+  try {
+    const result = antigravity_storage_service.delete_recording_session(session_id)
+    return result
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
 ipcMain.handle('project_create_local_db_request', async (_event: IpcMainInvokeEvent, data: { name: string }) => {
-    try {
-        const db_name = `brain_sync_${data.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-        const config = {
-            host: 'localhost',
-            user: 'root',
-            password: '', // Assume root sem senha por padrão para ambiente local dev
-            database: db_name
-        };
+  return {
+    success: false,
+    deprecated: true,
+    error: `O Brain-Sync nao cria mais bancos MySQL para ${data.name}.`,
+  }
+})
 
-        const schema_path = path.join(process.env.APP_ROOT, 'electron/db/schema.sql');
-        await database_service.connect(config, schema_path);
-        
-        return { success: true, config };
-    } catch (error) {
-        console.error('[Main] Falha ao auto-criar banco local:', error);
-        return { success: false, error: String(error) };
-    }
-});
-
-/**
- * Canal para abrir o seletor de pastas nativo.
- */
 ipcMain.handle('project_select_folder_request', async () => {
-    const result = await dialog.showOpenDialog({
-        properties: ['openDirectory']
-    });
-    if (result.canceled) return null;
-    return result.filePaths[0];
-});
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory']
+  })
+  if (result.canceled) return null
+  return result.filePaths[0]
+})
 
 app.whenReady().then(() => {
-    // Inicializa o repositório local usando a pasta de dados do Electron
-    project_repository = new ProjectRepository(app.getPath('userData'));
-    createWindow();
-});
+  project_repository = new ProjectRepository(app.getPath('userData'))
+  createWindow()
+})
