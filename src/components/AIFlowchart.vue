@@ -1,364 +1,509 @@
 <template>
-  <div class="ai-flowchart-container mb-5 p-4 rounded-4 shadow-2xl border border-secondary bg-black-70 position-relative overflow-hidden">
-    <div class="glow-orb glow-purple"></div>
-    <div class="glow-orb glow-blue"></div>
-
-    <div class="session-header mb-4 d-flex justify-content-between align-items-center position-relative z-1">
+  <section class="session-card rounded-4 p-4 p-xl-5 mb-4">
+    <div class="d-flex flex-column flex-xl-row justify-content-between gap-3 align-items-start">
       <div>
-        <h5 class="fw-bold ai-gradient-text mb-1 d-flex align-items-center">
-          <span class="fs-4 me-2">Brain</span> Sessao de Raciocinio da IA
-        </h5>
-        <small class="text-muted text-monospace d-block">ID: {{ session.session_id }}</small>
-        <div v-if="session.match_reason" class="mt-2">
-          <span class="badge bg-dark border border-secondary text-secondary x-small py-1 px-2 fw-normal opacity-75">
-            Vinculo: {{ session.match_reason }}
-          </span>
-        </div>
-        <div v-if="has_session_metrics" class="d-flex flex-wrap gap-2 mt-2">
-          <span v-if="session.media_files?.length" class="badge bg-dark border border-info-subtle text-info x-small py-1 px-2 fw-normal">
-            Midia: {{ session.media_files.length }}
-          </span>
-          <span v-if="session.browser_recording_count" class="badge bg-dark border border-primary-subtle text-primary x-small py-1 px-2 fw-normal">
-            Frames browser: {{ session.browser_recording_count }}
-          </span>
-          <span v-if="session.session_files?.length" class="badge bg-dark border border-secondary text-secondary x-small py-1 px-2 fw-normal">
-            Arquivos da sessao: {{ session.session_files.length }}
-          </span>
-          <span v-if="session.git_evidence?.branch" class="badge bg-dark border border-warning-subtle text-warning x-small py-1 px-2 fw-normal">
-            Git: {{ session.git_evidence.branch }}
-          </span>
-        </div>
-      </div>
-      <div class="d-flex align-items-center gap-2">
-        <span class="badge status-badge rounded-pill px-3 py-2 fw-bold">FINALIZADO</span>
-      </div>
-    </div>
-
-    <div class="d-flex align-items-stretch justify-content-between gap-3 flow-row flex-column flex-lg-row position-relative z-1">
-      <div class="flow-card card-pedido flex-grow-1 p-3 rounded-4 shadow-lg border border-warning-subtle position-relative overflow-hidden">
-        <h6 class="fw-bold text-warning mb-3 pb-2 border-bottom border-warning-subtle d-flex align-items-center">
-          <span class="card-icon me-2">1.</span> O Pedido
-        </h6>
-        <div class="markdown-body small overflow-auto pe-2" v-html="render_markdown(session.task_content)"></div>
+        <div class="section-kicker">Brain Session</div>
+        <h3 class="session-title mt-2 mb-2"><span class="brain-mark">🧠</span> Sessao de raciocinio</h3>
+        <div class="session-id">ID {{ session.session_id }}</div>
       </div>
 
-      <div class="flow-arrow d-none d-lg-flex align-items-center justify-content-center text-secondary fs-4">
-        <span class="arrow-icon">-&gt;</span>
-      </div>
-      <div class="flow-arrow d-lg-none d-flex align-items-center justify-content-center text-secondary fs-4 my-2">
-        <span class="arrow-icon">v</span>
-      </div>
-
-      <div class="flow-card card-plano flex-grow-1 p-3 rounded-4 shadow-lg border border-primary-subtle position-relative overflow-hidden">
-        <h6 class="fw-bold text-info mb-3 pb-2 border-bottom border-primary-subtle d-flex align-items-center">
-          <span class="card-icon me-2">2.</span> O Plano
-        </h6>
-        <div class="markdown-body small overflow-auto pe-2" v-html="render_markdown(session.plan_content)"></div>
-      </div>
-
-      <div class="flow-arrow d-none d-lg-flex align-items-center justify-content-center text-secondary fs-4">
-        <span class="arrow-icon">-&gt;</span>
-      </div>
-      <div class="flow-arrow d-lg-none d-flex align-items-center justify-content-center text-secondary fs-4 my-2">
-        <span class="arrow-icon">v</span>
-      </div>
-
-      <div class="flow-card card-execucao flex-grow-1 p-3 rounded-4 shadow-lg border border-success-subtle position-relative overflow-hidden">
-        <h6 class="fw-bold text-success mb-3 pb-2 border-bottom border-success-subtle d-flex align-items-center">
-          <span class="card-icon me-2">3.</span> Execucao
-        </h6>
-        <div class="markdown-body small overflow-auto pe-2" v-html="render_markdown(session.walkthrough_content)"></div>
-      </div>
-    </div>
-
-    <div v-if="session.git_evidence?.matching_recent_commits?.length || session.git_evidence?.matching_status_files?.length" class="floating-files-container mt-4 pt-3 border-top border-secondary position-relative">
-      <h6 class="fw-bold text-muted small mb-3 text-uppercase letter-spacing-2">EVIDENCIA GIT</h6>
-      <div v-if="session.git_evidence?.matching_status_files?.length" class="mb-3">
-        <div class="text-muted x-small mb-2">Arquivos com mudancas locais que cruzam com a sessao</div>
-        <div class="d-flex flex-wrap gap-2">
-          <div
-            v-for="file in session.git_evidence.matching_status_files"
-            :key="`status-${file}`"
-            class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
-          >
-            <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
+      <div class="d-flex flex-column align-items-xl-end gap-3">
+        <div class="session-meta-grid">
+          <div class="meta-pill" v-if="session.session_started_at">
+            <span class="meta-label">Inicio</span>
+            <span class="meta-value">{{ format_datetime(session.session_started_at) }}</span>
+          </div>
+          <div class="meta-pill" v-if="session.session_updated_at">
+            <span class="meta-label">Atualizacao</span>
+            <span class="meta-value">{{ format_datetime(session.session_updated_at) }}</span>
+          </div>
+          <div class="meta-pill" v-if="session.git_evidence?.branch">
+            <span class="meta-label">Branch</span>
+            <span class="meta-value">{{ session.git_evidence.branch }}</span>
           </div>
         </div>
-      </div>
 
-      <div v-if="session.git_evidence?.matching_recent_commits?.length">
-        <div class="text-muted x-small mb-2">Commits recentes que tocam os mesmos arquivos</div>
-        <div class="d-flex flex-column gap-2">
-          <div
-            v-for="commit in session.git_evidence.matching_recent_commits"
-            :key="commit.hash"
-            class="commit-card rounded-3 px-3 py-2 border"
-          >
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <span class="badge bg-dark text-warning border border-warning-subtle">{{ commit.short_hash }}</span>
-              <span class="text-white small">{{ commit.subject }}</span>
-            </div>
-            <div class="text-muted x-small">
-              {{ commit.author_name }} - {{ format_datetime(commit.authored_at) }}
+        <button class="graph-btn rounded-4" @click="$emit('open-graph', session)">
+          Ver fluxograma
+        </button>
+      </div>
+    </div>
+
+    <div class="content-grid mt-4">
+      <article class="content-card rounded-4 p-4">
+        <div class="section-kicker">Tasks</div>
+        <h4 class="content-title">Tasks da sessao</h4>
+        <div class="rich-body mt-3" v-html="render_task_content(session.task_content)"></div>
+      </article>
+
+      <article class="content-card rounded-4 p-4">
+        <div class="section-kicker">Plano</div>
+        <h4 class="content-title">Implementation plan</h4>
+        <div class="rich-body mt-3" v-html="render_markdown(session.plan_content)"></div>
+      </article>
+
+      <article class="content-card rounded-4 p-4">
+        <div class="section-kicker">Execucao</div>
+        <h4 class="content-title">Walkthrough final</h4>
+        <div class="rich-body mt-3" v-html="render_markdown(session.walkthrough_content)"></div>
+      </article>
+    </div>
+
+    <div v-if="history_groups.length" class="detail-panel rounded-4 p-4 mt-4">
+      <div class="panel-title">Historico completo das versoes</div>
+      <div class="history-grid mt-3">
+        <section v-for="group in history_groups" :key="group.key" class="history-column rounded-4 p-3">
+          <div class="history-heading">{{ group.label }}</div>
+          <div class="history-count">{{ group.items.length }} versoes</div>
+
+          <div class="history-list mt-3">
+            <details v-for="item in group.items" :key="item.file_path + item.label" class="history-item rounded-4 p-3" open>
+              <summary class="history-summary">
+                <span class="history-badge">{{ item.label }}</span>
+                <span class="history-date">{{ format_datetime(item.updated_at) }}</span>
+              </summary>
+              <div class="history-content mt-3" v-html="render_version_content(item.content)"></div>
+            </details>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="detail-grid mt-4">
+      <section class="detail-panel rounded-4 p-4" v-if="session.git_evidence">
+        <div class="panel-title">Git conectado</div>
+
+        <div class="git-summary-grid mt-3">
+          <div class="git-pill" v-if="session.git_evidence.repo_root">
+            <span class="meta-label">Repo</span>
+            <span class="meta-value break-anywhere">{{ session.git_evidence.repo_root }}</span>
+          </div>
+          <div class="git-pill" v-if="session.git_evidence.remote_url">
+            <span class="meta-label">Remote</span>
+            <span class="meta-value break-anywhere">{{ session.git_evidence.remote_url }}</span>
+          </div>
+        </div>
+
+        <div v-if="session.git_evidence.matching_recent_commits?.length" class="mt-4">
+          <div class="mini-title mb-2">Commits da sessao</div>
+          <div class="commit-list">
+            <div v-for="commit in session.git_evidence.matching_recent_commits" :key="commit.hash" class="commit-card rounded-4 p-3">
+              <div class="commit-topline">
+                <span class="commit-hash">{{ commit.short_hash }}</span>
+                <span class="history-date">{{ format_datetime(commit.authored_at) }}</span>
+              </div>
+              <div class="commit-subject mt-2">{{ commit.subject }}</div>
+              <div v-if="commit.body" class="commit-body mt-2">{{ commit.body }}</div>
+              <div class="commit-meta mt-2">{{ commit.author_name }}</div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <div class="floating-files-container mt-4 pt-3 border-top border-secondary position-relative" v-if="session.modified_files && session.modified_files.length > 0">
-      <h6 class="fw-bold text-muted small mb-3 text-uppercase letter-spacing-2">ARQUIVOS MODIFICADOS</h6>
-      <div class="d-flex flex-wrap gap-2 position-relative pt-2">
-        <div
-          v-for="(file, index) in session.modified_files"
-          :key="file"
-          class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
-          :style="{ animationDelay: `${(index % 8) * 0.2}s` }"
-        >
-          <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
-        </div>
-      </div>
-    </div>
+        <div v-else class="empty-copy mt-4">Nenhum commit relacionado foi encontrado para esta sessao.</div>
+      </section>
 
-    <div class="floating-files-container mt-4 pt-3 border-top border-secondary position-relative" v-if="session.media_files && session.media_files.length > 0">
-      <h6 class="fw-bold text-muted small mb-3 text-uppercase letter-spacing-2">ARTEFATOS DE MIDIA</h6>
-      <div class="d-flex flex-wrap gap-2 position-relative pt-2">
-        <div
-          v-for="file in session.media_files"
-          :key="file"
-          class="file-badge px-3 py-2 rounded-pill border shadow-lg d-flex align-items-center"
-        >
-          <span class="file-name x-small text-truncate" :title="file" style="max-width: 250px;">{{ get_filename(file) }}</span>
+      <section class="detail-panel rounded-4 p-4" v-if="session.modified_files?.length || session.context_source_files?.length">
+        <div class="panel-title">Arquivos e fontes</div>
+
+        <div v-if="session.modified_files?.length" class="mt-3">
+          <div class="mini-title mb-2">Arquivos modificados</div>
+          <div class="badge-cloud">
+            <span v-for="file in session.modified_files" :key="file" class="glass-badge">
+              {{ get_filename(file) }}
+            </span>
+          </div>
         </div>
-      </div>
+
+        <div v-if="session.context_source_files?.length" class="mt-4">
+          <div class="mini-title mb-2">Fontes arquivadas</div>
+          <div class="badge-cloud">
+            <span v-for="file in session.context_source_files.slice(0, 24)" :key="file" class="glass-badge">
+              {{ get_filename(file) }}
+            </span>
+          </div>
+        </div>
+      </section>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { marked } from 'marked';
-import filterXSS from 'xss';
+import { computed } from 'vue'
+import { marked } from 'marked'
+import filterXSS from 'xss'
+
+type ArtifactRevision = {
+  label: string
+  file_path: string
+  content: string | null
+  updated_at: string | null
+  is_current: boolean
+}
+
+defineEmits<{
+  (e: 'open-graph', session: any): void
+}>()
 
 const props = defineProps<{
   session: {
-    session_id: string;
-    task_content: string | null;
-    plan_content: string | null;
-    walkthrough_content: string | null;
-    modified_files: string[];
-    match_reason?: string;
-    media_files?: string[];
-    session_files?: string[];
-    browser_recording_count?: number;
+    session_id: string
+    task_content: string | null
+    plan_content: string | null
+    walkthrough_content: string | null
+    modified_files: string[]
+    context_source_files?: string[]
+    session_started_at?: string | null
+    session_updated_at?: string | null
+    artifact_history?: {
+      task: ArtifactRevision[]
+      plan: ArtifactRevision[]
+      walkthrough: ArtifactRevision[]
+    }
     git_evidence?: {
-      repo_root: string | null;
-      branch: string | null;
-      status_files: string[];
-      matching_status_files: string[];
+      repo_root: string | null
+      branch: string | null
+      remote_url: string | null
+      status_files: string[]
+      matching_status_files: string[]
       matching_recent_commits: Array<{
-        hash: string;
-        short_hash: string;
-        author_name: string;
-        authored_at: string;
-        subject: string;
-        body: string;
-        files: string[];
-      }>;
-      overlap_files: string[];
-    };
+        hash: string
+        short_hash: string
+        author_name: string
+        authored_at: string
+        subject: string
+        body: string
+        files: string[]
+      }>
+      overlap_files: string[]
+    }
   }
-}>();
+}>()
 
-const has_session_metrics = computed(() => {
-  return Boolean(
-    props.session.media_files?.length ||
-    props.session.session_files?.length ||
-    props.session.browser_recording_count ||
-    props.session.git_evidence?.branch
-  );
-});
+const history_groups = computed(() => {
+  const groups = [
+    { key: 'task', label: 'Task / pedido', items: props.session.artifact_history?.task || [] },
+    { key: 'plan', label: 'Implementation / plano', items: props.session.artifact_history?.plan || [] },
+    { key: 'walkthrough', label: 'Walkthrough / execucao', items: props.session.artifact_history?.walkthrough || [] },
+  ]
+
+  return groups.filter(group => group.items.length > 0)
+})
 
 const render_markdown = (content: string | null) => {
-  if (!content) return '<p class="text-muted italic opacity-50">Conteudo nao disponivel.</p>';
+  if (!content) return '<p class="empty-copy">Conteudo nao disponivel.</p>'
   try {
-    const raw = marked(content);
-    return filterXSS(raw as string);
+    return filterXSS(marked(content) as string)
   } catch (err) {
-    console.error('Erro ao renderizar markdown:', err);
-    return `<p class="text-danger">Erro no render: ${String(err)}</p>`;
+    return `<p class="empty-copy">Erro ao renderizar: ${String(err)}</p>`
   }
-};
+}
+
+const render_task_content = (content: string | null) => {
+  if (!content) return '<p class="empty-copy">Tasks nao disponiveis.</p>'
+  if (/<[^>]+>/.test(content)) {
+    return filterXSS(content)
+  }
+
+  if (looks_like_checklist(content)) {
+    return render_checklist_text(content)
+  }
+
+  return render_plain_text(content)
+}
+
+const render_version_content = (content: string | null) => {
+  if (!content) return '<p class="empty-copy">Versao sem conteudo.</p>'
+  if (/<[^>]+>/.test(content)) {
+    return filterXSS(content)
+  }
+  return render_markdown(content)
+}
+
+const looks_like_checklist = (content: string) => {
+  return /\[[xX\s/]\]/.test(content) || /^\s*-\s/m.test(content)
+}
+
+const render_checklist_text = (content: string) => {
+  const lines = content
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  const items = lines.map(line => {
+    const checked = /\[[xX]\]/.test(line)
+    const clean = line.replace(/^[#*\-\s]+/, '').replace(/\[(?:x|X| |\/)\]\s*/g, '').trim()
+    return `<li class="task-line ${checked ? 'task-line-done' : ''}"><span class="task-checkbox">${checked ? '✓' : '•'}</span><span>${escape_html(clean)}</span></li>`
+  }).join('')
+
+  return `<ul class="task-list">${items}</ul>`
+}
+
+const render_plain_text = (content: string) => {
+  const html = escape_html(content).replace(/\n/g, '<br>')
+  return `<div class="plain-copy">${html}</div>`
+}
+
+const escape_html = (content: string) => {
+  return content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
 const get_filename = (filepath: string) => {
-  if (!filepath) return 'Desconhecido';
-  const base = filepath.split(/\\|\//).pop() || filepath;
-  return base.split('#')[0];
-};
+  const base = filepath.split(/\\|\//).pop() || filepath
+  return base.split('#')[0]
+}
 
-const format_datetime = (value: string) => {
-  if (!value) return 'Data desconhecida';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-};
+const format_datetime = (value: string | null | undefined) => {
+  if (!value) return 'Data desconhecida'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
 </script>
 
 <style scoped>
-.ai-flowchart-container {
-  background: linear-gradient(135deg, #0b0d11 0%, #161a22 100%);
-  border-color: rgba(255, 255, 255, 0.05) !important;
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+.session-card,
+.content-card,
+.detail-panel,
+.history-column,
+.history-item,
+.commit-card {
+  background: linear-gradient(180deg, rgba(9, 13, 27, 0.96), rgba(7, 10, 20, 0.94));
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  box-shadow: 0 20px 50px rgba(2, 6, 23, 0.3);
 }
 
-.bg-black-70 {
-  background-color: rgba(10, 11, 16, 0.9);
+.section-kicker,
+.panel-title,
+.mini-title {
+  color: #84ccff;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
-.ai-gradient-text {
-  background: linear-gradient(90deg, #c084fc, #60a5fa);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.session-title,
+.content-title,
+.history-heading,
+.commit-subject {
+  color: #f8fbff;
+  font-weight: 800;
 }
 
-.status-badge {
-  background-color: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: #60a5fa;
-  font-size: 0.65rem;
-  letter-spacing: 1px;
+.session-id,
+.history-count,
+.history-date,
+.commit-meta,
+.commit-body,
+.empty-copy {
+  color: #97a8cc;
 }
 
-.flow-card {
-  background-color: rgba(30, 41, 59, 0.3);
-  backdrop-filter: blur(8px);
-  min-height: 250px;
-  max-height: 550px;
-  display: flex;
-  flex-direction: column;
-  transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
-  border-width: 1px !important;
+.brain-mark {
+  margin-right: 0.5rem;
 }
 
-.flow-card:hover {
-  transform: translateY(-5px);
-  background-color: rgba(30, 41, 59, 0.5);
+.session-meta-grid,
+.git-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+  width: 100%;
+  max-width: 680px;
 }
 
-.card-pedido { border-color: rgba(255, 193, 7, 0.1) !important; }
-.card-pedido:hover { border-color: rgba(255, 193, 7, 0.4) !important; box-shadow: 0 0 15px rgba(255, 193, 7, 0.1) !important; }
-
-.card-plano { border-color: rgba(13, 110, 253, 0.1) !important; }
-.card-plano:hover { border-color: rgba(13, 110, 253, 0.4) !important; box-shadow: 0 0 15px rgba(13, 110, 253, 0.1) !important; }
-
-.card-execucao { border-color: rgba(25, 135, 84, 0.1) !important; }
-.card-execucao:hover { border-color: rgba(25, 135, 84, 0.4) !important; box-shadow: 0 0 15px rgba(25, 135, 84, 0.1) !important; }
-
-.markdown-body {
-  color: #94a3b8;
-  line-height: 1.5;
-  scrollbar-width: auto;
-  scrollbar-color: #3b82f6 rgba(255, 255, 255, 0.05);
-  flex: 1;
-  min-height: 0;
+.meta-pill,
+.git-pill {
+  border-radius: 18px;
+  padding: 0.85rem 1rem;
+  background: rgba(11, 17, 34, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
-.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) {
-  color: #e2e8f0;
+.meta-label {
+  display: block;
+  color: #84ccff;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 0.35rem;
+}
+
+.meta-value,
+.plain-copy,
+.history-content,
+.rich-body {
+  color: #e5eeff;
+}
+
+.graph-btn {
+  border: 1px solid rgba(139, 92, 246, 0.34);
+  background: linear-gradient(135deg, rgba(109, 40, 217, 0.88), rgba(37, 99, 235, 0.88));
+  color: #f8fbff;
+  padding: 0.8rem 1.1rem;
+  font-weight: 700;
+}
+
+.content-grid,
+.detail-grid,
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.history-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rich-body,
+.history-content {
+  max-height: 360px;
+  overflow: auto;
+  line-height: 1.65;
+  padding-right: 0.35rem;
+}
+
+.rich-body :deep(h1),
+.rich-body :deep(h2),
+.rich-body :deep(h3),
+.history-content :deep(h1),
+.history-content :deep(h2),
+.history-content :deep(h3) {
+  color: #ffffff;
   font-size: 1rem;
   margin-top: 1rem;
   margin-bottom: 0.5rem;
-  font-weight: bold;
 }
 
-.markdown-body :deep(p) {
-  margin-bottom: 0.75rem;
+.rich-body :deep(p),
+.rich-body :deep(li),
+.rich-body :deep(div),
+.rich-body :deep(span),
+.history-content :deep(p),
+.history-content :deep(li),
+.history-content :deep(div),
+.history-content :deep(span) {
+  color: #dde8ff;
 }
 
-.markdown-body :deep(code) {
-  background-color: rgba(0, 0, 0, 0.3);
-  padding: 0.1rem 0.3rem;
-  border-radius: 4px;
-  color: #cbd5e1;
-  font-family: 'Courier New', Courier, monospace;
+.rich-body :deep(a),
+.history-content :deep(a) {
+  color: #7dd3fc;
 }
 
-.markdown-body :deep(ul) {
-  padding-left: 1.2rem;
-  margin-bottom: 0.75rem;
-}
-
-.markdown-body::-webkit-scrollbar {
-  width: 6px;
-}
-
-.markdown-body::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+.rich-body :deep(code),
+.rich-body :deep(pre),
+.history-content :deep(code),
+.history-content :deep(pre) {
+  color: #eef4ff;
+  background: rgba(15, 23, 42, 0.84);
   border-radius: 10px;
 }
 
-.markdown-body::-webkit-scrollbar-thumb {
-  background: #3b82f6;
-  border-radius: 10px;
-  box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
+.history-list,
+.commit-list {
+  display: grid;
+  gap: 0.8rem;
 }
 
-.markdown-body::-webkit-scrollbar-thumb:hover {
-  background: #60a5fa;
+.history-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
 }
 
-.glow-orb {
-  position: absolute;
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.1;
-  pointer-events: none;
-  z-index: 0;
+.history-summary::-webkit-details-marker {
+  display: none;
 }
 
-.glow-purple { top: -50px; left: -50px; background-color: #a855f7; }
-.glow-blue { bottom: -50px; right: -50px; background-color: #3b82f6; }
-
-.z-1 { z-index: 1; }
-
-.arrow-icon { opacity: 0.3; font-weight: bold; }
-
-.ai-flowchart-container:hover .arrow-icon {
-  opacity: 0.7;
-  color: #60a5fa;
-  transform: scale(1.1);
-  transition: all 0.3s;
+.history-badge,
+.commit-hash,
+.glass-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(20, 28, 49, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #eef4ff;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
 }
 
-.file-badge,
-.commit-card {
-  background: rgba(30, 41, 59, 0.6);
-  border-color: rgba(59, 130, 246, 0.2) !important;
-  color: #94a3b8;
-  backdrop-filter: blur(4px);
+.commit-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
 }
 
-.file-badge {
-  animation: float 4s ease-in-out infinite;
+.badge-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
 }
 
-.file-badge:hover,
-.commit-card:hover {
-  animation-play-state: paused;
-  border-color: #60a5fa !important;
-  color: #fff;
-  background: rgba(59, 130, 246, 0.3);
+.break-anywhere {
+  word-break: break-all;
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
+.plain-copy {
+  white-space: normal;
 }
 
-.letter-spacing-2 { letter-spacing: 2px; }
-.italic { font-style: italic; }
-.x-small { font-size: 0.75rem; }
+.rich-body :deep(.task-list) {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.rich-body :deep(.task-line) {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+}
+
+.rich-body :deep(.task-checkbox) {
+  color: #7dd3fc;
+  min-width: 16px;
+}
+
+.rich-body :deep(.task-line-done) {
+  opacity: 0.92;
+}
+
+.rich-body::-webkit-scrollbar,
+.history-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.rich-body::-webkit-scrollbar-thumb,
+.history-content::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8b5cf6, #38bdf8);
+  border-radius: 999px;
+}
+
+@media (max-width: 1199px) {
+  .content-grid,
+  .detail-grid,
+  .history-grid,
+  .session-meta-grid,
+  .git-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

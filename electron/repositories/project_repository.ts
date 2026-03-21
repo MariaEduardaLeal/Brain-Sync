@@ -8,6 +8,7 @@ export interface ProjectMetadata {
     id: number;
     name: string;
     local_path: string;
+    vault_path?: string;
     db_host?: string;
     db_user?: string;
     db_pass?: string;
@@ -87,6 +88,22 @@ export class ProjectRepository {
     public get_project_by_id(id: number): ProjectMetadata | null {
         const projects = this.get_all_projects();
         return projects.find(p => p.id === id) || null;
+    }
+
+    /**
+     * Atualiza um projeto existente.
+     */
+    public update_project(project_data: ProjectMetadata): boolean {
+        const projects = this.get_all_projects();
+        const index = projects.findIndex(project => project.id === project_data.id);
+
+        if (index === -1) {
+            return false;
+        }
+
+        projects[index] = project_data;
+        this.persist(projects);
+        return true;
     }
 
     /**

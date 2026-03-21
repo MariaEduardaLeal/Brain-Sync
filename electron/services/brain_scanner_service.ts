@@ -15,6 +15,19 @@ interface SessionArtifact {
     metadata: ArtifactMetadata | null;
 }
 
+interface ArtifactRevision {
+    label: string;
+    file_path: string;
+    content: string | null;
+    updated_at: string | null;
+    is_current: boolean;
+}
+
+interface SessionArtifactBundle {
+    current: SessionArtifact;
+    history: ArtifactRevision[];
+}
+
 interface CachedSessionEntry {
     stamp: number;
     data: AIReasoningSession | null;
@@ -28,9 +41,15 @@ interface SessionFolderCandidate {
 
 export interface AIReasoningSession {
     session_id: string;
+    user_request_content: string | null;
     task_content: string | null;
     plan_content: string | null;
     walkthrough_content: string | null;
+    artifact_history: {
+        task: ArtifactRevision[];
+        plan: ArtifactRevision[];
+        walkthrough: ArtifactRevision[];
+    };
     modified_files: string[];
     project_id?: number;
     match_reason?: string;
@@ -41,12 +60,21 @@ export interface AIReasoningSession {
         walkthrough?: ArtifactMetadata | null;
     };
     session_files: string[];
+    context_source_files: string[];
     media_files: string[];
     browser_recording_files: string[];
     browser_recording_count: number;
+    session_started_at: string | null;
+    session_updated_at: string | null;
+    conversation_artifact: {
+        file_path: string;
+        exists: boolean;
+        size_bytes: number;
+    };
     git_evidence?: {
         repo_root: string | null;
         branch: string | null;
+        remote_url: string | null;
         status_files: string[];
         matching_status_files: string[];
         matching_recent_commits: Array<{
@@ -68,6 +96,7 @@ export class BrainScannerService {
 
     private antigravity_root = path.join(os.homedir(), '.gemini', 'antigravity');
     private brain_path = path.join(this.antigravity_root, 'brain');
+    private conversations_path = path.join(this.antigravity_root, 'conversations');
     private browser_recordings_path = path.join(this.antigravity_root, 'browser_recordings');
 
     public async scan_historical_data(project_filter?: ProjectMetadata): Promise<AIReasoningSession[]> {
@@ -127,49 +156,72 @@ export class BrainScannerService {
         }
 
         const [task, plan, walkthrough] = await Promise.all([
-            this.load_artifact(candidate.folder_path, 'task.md'),
-            this.load_artifact(candidate.folder_path, 'implementation_plan.md'),
-            this.load_artifact(candidate.folder_path, 'walkthrough.md')
+            this.load_artifact_bundle(candidate.folder_path, 'task.md'),
+            this.load_artifact_bundle(candidate.folder_path, 'implementation_plan.md'),
+            this.load_artifact_bundle(candidate.folder_path, 'walkthrough.md')
         ]);
 
-        if (!task.content && !plan.content && !walkthrough.content) {
+        if (!task.current.content && !plan.current.content && !walkthrough.current.content) {
             BrainScannerService.session_cache.set(candidate.session_id, { stamp: candidate.stamp, data: null });
             return null;
         }
 
         const session_files = await this.list_session_files_shallow(candidate.folder_path);
+        const context_source_files = this.collect_context_source_files([
+            ...session_files,
+            ...task.history.map(item => item.file_path),
+            ...plan.history.map(item => item.file_path),
+            ...walkthrough.history.map(item => item.file_path)
+        ]);
         const media_files = session_files.filter(file_path => this.is_media_file(file_path));
         const browser_recording_files = await this.list_browser_recording_preview(candidate.session_id);
         const browser_recording_count = await this.count_browser_recording_files(candidate.session_id);
+        const conversation_artifact = await this.get_conversation_artifact(candidate.session_id);
 
         const all_text_parts = [
-            task.content,
-            plan.content,
-            walkthrough.content,
-            task.metadata ? JSON.stringify(task.metadata, null, 2) : null,
-            plan.metadata ? JSON.stringify(plan.metadata, null, 2) : null,
-            walkthrough.metadata ? JSON.stringify(walkthrough.metadata, null, 2) : null
+            task.current.content,
+            plan.current.content,
+            walkthrough.current.content,
+            ...task.history.map(item => item.content),
+            ...plan.history.map(item => item.content),
+            ...walkthrough.history.map(item => item.content),
+            task.current.metadata ? JSON.stringify(task.current.metadata, null, 2) : null,
+            plan.current.metadata ? JSON.stringify(plan.current.metadata, null, 2) : null,
+            walkthrough.current.metadata ? JSON.stringify(walkthrough.current.metadata, null, 2) : null
         ].filter((value): value is string => Boolean(value && value.trim()));
 
         const all_text_content = all_text_parts.join('\n\n');
         const modified_files = this.extract_file_paths(all_text_content);
+        const session_started_at = this.get_session_started_at([task.history, plan.history, walkthrough.history]);
+        const session_updated_at = this.get_session_updated_at(task.current.metadata, plan.current.metadata, walkthrough.current.metadata, candidate.stamp);
+        const user_request_content = this.extract_user_request_content(task);
 
         const base_session: AIReasoningSession = {
             session_id: candidate.session_id,
-            task_content: task.content,
-            plan_content: plan.content,
-            walkthrough_content: walkthrough.content,
+            user_request_content,
+            task_content: task.current.content,
+            plan_content: plan.current.content,
+            walkthrough_content: walkthrough.current.content,
+            artifact_history: {
+                task: task.history,
+                plan: plan.history,
+                walkthrough: walkthrough.history
+            },
             modified_files,
             all_text_content,
             artifact_summaries: {
-                task: task.metadata,
-                plan: plan.metadata,
-                walkthrough: walkthrough.metadata
+                task: task.current.metadata,
+                plan: plan.current.metadata,
+                walkthrough: walkthrough.current.metadata
             },
             session_files,
+            context_source_files,
             media_files,
             browser_recording_files,
-            browser_recording_count
+            browser_recording_count,
+            session_started_at,
+            session_updated_at,
+            conversation_artifact
         };
 
         BrainScannerService.session_cache.set(candidate.session_id, {
@@ -210,6 +262,54 @@ export class BrainScannerService {
         };
     }
 
+    private async load_artifact_bundle(folder_path: string, filename: string): Promise<SessionArtifactBundle> {
+        const current = await this.load_artifact(folder_path, filename);
+        const history = await this.load_artifact_history(folder_path, filename, current.metadata?.updatedAt || null);
+
+        return {
+            current,
+            history
+        };
+    }
+
+    private async load_artifact_history(folder_path: string, filename: string, current_updated_at: string | null): Promise<ArtifactRevision[]> {
+        if (!fs.existsSync(folder_path)) {
+            return [];
+        }
+
+        const prefix = `${filename}.resolved`;
+        const dirents = await fs.promises.readdir(folder_path, { withFileTypes: true });
+        const candidates = dirents
+            .filter(dirent => dirent.isFile() && dirent.name.startsWith(prefix))
+            .map(dirent => dirent.name)
+            .sort((a, b) => this.compare_resolved_names(a, b));
+
+        const revisions: ArtifactRevision[] = await Promise.all(candidates.map(async name => {
+            const file_path = path.join(folder_path, name);
+            const stats = await fs.promises.stat(file_path);
+            return {
+                label: this.get_resolved_label(name, prefix),
+                file_path,
+                content: await this.read_optional_text(file_path),
+                updated_at: stats.mtime.toISOString(),
+                is_current: false
+            } satisfies ArtifactRevision;
+        }));
+
+        const current_path = path.join(folder_path, filename);
+        if (fs.existsSync(current_path)) {
+            revisions.push({
+                label: 'atual',
+                file_path: current_path,
+                content: await this.read_optional_text(current_path),
+                updated_at: current_updated_at,
+                is_current: true
+            });
+        }
+
+        return revisions.filter(item => Boolean(item.content && item.content.trim()));
+    }
+
     private async read_optional_text(file_path: string): Promise<string | null> {
         if (!fs.existsSync(file_path)) {
             return null;
@@ -247,6 +347,10 @@ export class BrainScannerService {
             .sort();
     }
 
+    private collect_context_source_files(file_paths: string[]): string[] {
+        return [...new Set(file_paths)].sort();
+    }
+
     private async list_browser_recording_preview(session_id: string): Promise<string[]> {
         const recording_path = path.join(this.browser_recordings_path, session_id);
         if (!fs.existsSync(recording_path)) {
@@ -268,6 +372,24 @@ export class BrainScannerService {
 
         const dirents = await fs.promises.readdir(recording_path, { withFileTypes: true });
         return dirents.filter(dirent => dirent.isFile()).length;
+    }
+
+    private async get_conversation_artifact(session_id: string): Promise<AIReasoningSession['conversation_artifact']> {
+        const file_path = path.join(this.conversations_path, `${session_id}.pb`);
+        if (!fs.existsSync(file_path)) {
+            return {
+                file_path,
+                exists: false,
+                size_bytes: 0
+            };
+        }
+
+        const stats = await fs.promises.stat(file_path);
+        return {
+            file_path,
+            exists: true,
+            size_bytes: stats.size
+        };
     }
 
     private match_session_to_project(project_filter: ProjectMetadata, modified_files: string[]) {
@@ -345,6 +467,32 @@ export class BrainScannerService {
         return path.normalize(target_path).replace(/\//g, '\\').toLowerCase();
     }
 
+    private compare_resolved_names(left: string, right: string): number {
+        return this.get_resolved_order(left) - this.get_resolved_order(right);
+    }
+
+    private get_resolved_order(name: string): number {
+        const match = name.match(/\.resolved(?:\.(\d+))?$/);
+        if (!match) {
+            return Number.MAX_SAFE_INTEGER;
+        }
+
+        if (match[1] == null) {
+            return Number.MAX_SAFE_INTEGER - 1;
+        }
+
+        return Number.parseInt(match[1], 10);
+    }
+
+    private get_resolved_label(name: string, prefix: string): string {
+        if (name === prefix) {
+            return 'resolvido-final';
+        }
+
+        const suffix = name.slice(prefix.length + 1);
+        return `resolvido-${suffix}`;
+    }
+
     private looks_like_absolute_path(target_path: string): boolean {
         return /^[a-z]:\\/.test(target_path);
     }
@@ -355,10 +503,43 @@ export class BrainScannerService {
 
     private get_latest_timestamp(session: AIReasoningSession): string {
         return [
+            session.session_updated_at,
             session.artifact_summaries.task?.updatedAt,
             session.artifact_summaries.plan?.updatedAt,
             session.artifact_summaries.walkthrough?.updatedAt
         ].filter((value): value is string => Boolean(value)).sort().pop() || '';
+    }
+
+    private get_session_started_at(groups: ArtifactRevision[][]): string | null {
+        const timestamps = groups
+            .flat()
+            .map(item => item.updated_at)
+            .filter((value): value is string => Boolean(value))
+            .sort()
+
+        return timestamps[0] || null;
+    }
+
+    private get_session_updated_at(
+        task_metadata: ArtifactMetadata | null,
+        plan_metadata: ArtifactMetadata | null,
+        walkthrough_metadata: ArtifactMetadata | null,
+        fallback_stamp: number
+    ): string {
+        return [
+            task_metadata?.updatedAt,
+            plan_metadata?.updatedAt,
+            walkthrough_metadata?.updatedAt
+        ].filter((value): value is string => Boolean(value)).sort().pop() || new Date(fallback_stamp).toISOString();
+    }
+
+    private extract_user_request_content(task_bundle: SessionArtifactBundle): string | null {
+        const history_source = task_bundle.history.find(item => !item.is_current)?.content || task_bundle.current.content;
+        if (!history_source) {
+            return null;
+        }
+
+        return history_source.trim();
     }
 
     private get_filename(filepath: string): string {

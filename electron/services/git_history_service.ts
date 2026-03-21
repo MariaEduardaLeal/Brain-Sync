@@ -23,6 +23,7 @@ export interface GitDiffFile {
 export interface GitSessionEvidence {
     repo_root: string | null;
     branch: string | null;
+    remote_url: string | null;
     status_files: string[];
     matching_status_files: string[];
     matching_recent_commits: GitCommitSummary[];
@@ -33,6 +34,7 @@ interface GitProjectEvidence {
     is_git_repo: boolean;
     repo_root: string | null;
     branch: string | null;
+    remote_url: string | null;
     status_files: string[];
     recent_commits: GitCommitSummary[];
 }
@@ -46,6 +48,7 @@ export class GitHistoryService {
                 git_evidence: {
                     repo_root: null,
                     branch: null,
+                    remote_url: null,
                     status_files: [],
                     matching_status_files: [],
                     matching_recent_commits: [],
@@ -64,6 +67,7 @@ export class GitHistoryService {
         try {
             const repo_root = await this.run_git(['rev-parse', '--show-toplevel'], project_path);
             const branch = await this.run_git(['rev-parse', '--abbrev-ref', 'HEAD'], project_path);
+            const remote_url = await this.run_git(['remote', 'get-url', 'origin'], project_path, true);
             const status_output = await this.run_git(['status', '--porcelain=v1'], project_path, true);
             const log_output = await this.run_git([
                 'log',
@@ -71,13 +75,14 @@ export class GitHistoryService {
                 '--name-only',
                 '--pretty=format:__COMMIT__%n%H%n%h%n%an%n%ad%n%s%n%b%n__FILES__',
                 '-n',
-                '20'
+                '100'
             ], project_path, true);
 
             return {
                 is_git_repo: true,
                 repo_root,
                 branch,
+                remote_url,
                 status_files: this.parse_status_files(status_output, repo_root),
                 recent_commits: this.parse_commit_log(log_output, repo_root)
             };
@@ -86,6 +91,7 @@ export class GitHistoryService {
                 is_git_repo: false,
                 repo_root: null,
                 branch: null,
+                remote_url: null,
                 status_files: [],
                 recent_commits: []
             };
@@ -105,13 +111,28 @@ export class GitHistoryService {
             return overlap_files.includes(normalized_status);
         });
 
-        const matching_recent_commits = evidence.recent_commits.filter(commit => {
+        let matching_recent_commits = evidence.recent_commits.filter(commit => {
             return commit.files.some(commit_file => overlap_files.includes(this.normalize_path(commit_file)));
-        }).slice(0, 5);
+        });
+
+        if (matching_recent_commits.length === 0 && session.session_updated_at) {
+            const target_time = new Date(session.session_updated_at).getTime();
+            const fallback_window_ms = 1000 * 60 * 60 * 48;
+            matching_recent_commits = evidence.recent_commits.filter(commit => {
+                const commit_time = new Date(commit.authored_at).getTime();
+                if (Number.isNaN(commit_time)) {
+                    return false;
+                }
+                return Math.abs(commit_time - target_time) <= fallback_window_ms;
+            });
+        }
+
+        matching_recent_commits = matching_recent_commits.slice(0, 10);
 
         return {
             repo_root: evidence.repo_root,
             branch: evidence.branch,
+            remote_url: evidence.remote_url,
             status_files: evidence.status_files,
             matching_status_files,
             matching_recent_commits,
